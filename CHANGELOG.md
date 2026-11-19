@@ -2,86 +2,85 @@
 
 ## 2.0.0 - 2026-11-16
 
-+ [重构] 系统整体重构为 Go 语言，支持高并发，内存占用极低。
-+ [重构] 页面全新重构，对话、生图、文件、语音合并为「创作台」。
-+ [更新] 上游协议更新至最新网页端版本，新增语音合成与转写接口。
-+ [修复] 修复用户密钥最近使用时间不更新的问题。
-+ [注意] 不兼容历史数据，升级后需重新导入账号。
++ [Refactor] The entire system was rewritten in Go, supporting high concurrency with an extremely low memory footprint.
++ [Refactor] The pages were completely rebuilt; chat, image generation, files, and voice were merged into the "Creation Studio".
++ [Update] The upstream protocol was updated to the latest web version, adding speech synthesis and transcription endpoints.
++ [Fix] Fixed an issue where the user key's last-used time was not updated.
++ [Note] Not compatible with historical data; after upgrading you must re-import accounts.
 
 ## 1.8.0 - 2026-07-28
 
-+ [新增] 新增默认请求上游模型名称和默认思考强度配置，支持在设置页面修改，并可通过模型名的 `-standard`、`-extended`、`-max` 后缀覆盖思考强度。
-+ [修复] 新增没出图也移除本地对话的配置，支持在图片生成失败、超时或仅返回文本时异步隐藏对应对话记录。
-+ [修复] `/v1/models` 汇总各账号类型的官方模型列表，文本请求按模型权限选择账号。
-+ [修复] 过滤隐藏、非最终频道及发往内部工具的助手消息，避免搜索指令和推理内容泄漏到 API 输出。
-+ [修复] 修复输出清洗误删代码和命令中标点前空格的问题。
-+ [修复] 为图片生成 SSE 流增加可配置的硬超时上限，避免上游长连接长时间挂起。
-+ [优化] 数据库存储改为增量同步，仅新增、更新或删除发生变化的记录，保留未变记录的 ID。
++ [Added] Added configuration for the default upstream model name and default thinking effort, which can be changed on the settings page and overridden via the `-standard`, `-extended`, `-max` suffixes on the model name.
++ [Fix] Added a config to remove local conversations even when no image is produced, supporting asynchronous hiding of the corresponding conversation record when image generation fails, times out, or only returns text.
++ [Fix] `/v1/models` aggregates the official model list across account types, and text requests select accounts based on model permissions.
++ [Fix] Filter out hidden, non-final-channel assistant messages and those sent to internal tools, to prevent search instructions and reasoning content from leaking into the API output.
++ [Fix] Fixed an issue where output cleaning mistakenly removed spaces before punctuation in code and commands.
++ [Fix] Added a configurable hard timeout cap for the image-generation SSE stream to avoid upstream long connections hanging for a long time.
++ [Optimization] Database storage was changed to incremental sync, only adding, updating, or deleting records that changed, and preserving the IDs of unchanged records.
 
 ## 1.7.0 - 2026-07-05
 
-+ [移除] 移除注册功能、防滥用机制导致封禁GitHub账号。
++ [Removed] Removed the registration feature; the anti-abuse mechanism was causing GitHub accounts to be banned.
 
 ## 1.6.0 - 2026-07-04
 
-+ [修复] 修复sub2api导入问题。
-+ [修复] 修复前端404、405问题。
-+ [新增] 新增出图后删除对话记录功能。
-+ [调整] Pro号不再按无限额度处理、约每天1000张。
++ [Fix] Fixed the sub2api import issue.
++ [Fix] Fixed frontend 404 and 405 issues.
++ [Added] Added a feature to delete the conversation record after an image is produced.
++ [Adjustment] Pro accounts are no longer treated as having unlimited quota — roughly 1000 images per day.
 
 ## 1.5.0 - 2026-06-13
 
-+ [新增] 新增 WARP / Privoxy / FlareSolverr 清障方案，注册遇到 Cloudflare 拦截后可刷新 clearance 并重试。
-+ [新增] 新增 `outlook_token` 邮箱池，支持 Outlook/Hotmail 注册验证码读取。
-+ [新增] 新增网页搜索兼容接口、图片编辑 mask 和图片任务相关能力。
-+ [优化] 更新 sentinel/PoW 获取方式，提高上游请求兼容性。
-+ [优化] 调整代理优先级和注册请求重试逻辑。
++ [Added] Added a WARP / Privoxy / FlareSolverr unblocking solution; after hitting a Cloudflare block during registration, you can refresh the clearance and retry.
++ [Added] Added an `outlook_token` mailbox pool, supporting reading Outlook/Hotmail registration verification codes.
++ [Added] Added a web-search compatibility endpoint, image-edit mask support, and image-task-related capabilities.
++ [Optimization] Updated the sentinel/PoW acquisition method to improve upstream request compatibility.
++ [Optimization] Adjusted the proxy priority and the registration-request retry logic.
 
 ## 1.4.1 - 2026-06-03
 
-+ [新增] 账号刷新改为异步模式，支持前端轮询刷新/重新登录进度。
-+ [新增] 号池管理页面新增重新登录功能，支持密码登录恢复异常账号。
-+ [新增] 刷新后自动重新登录异常账号（可在设置页开启）。
-+ [新增] 图片生成支持并行模式，多张图片使用独立线程和账号同时生成。
-+ [新增] 图片轮询超时自动换账号重试（最多4次），连接超时同账号递增等待重试。
-+ [新增] 图片二次确认机制与先check再hit可配置化，关闭后可跳过等待直接返回结果。
-+ [新增] 图片任务进度追踪，显示当前生成步骤（上传/预热/获取token/生成中等）。
-+ [新增] 图片超时后续轮询功能，前端显示"继续等待"按钮。
-+ [新增] 设置页新增图片二次确认、超时等待时间、自动重新登录等配置项。
-+ [优化] 优化生图页面滚动加载性能，图片懒加载、会话切换滚动位置保存与恢复。
++ [Added] Account refresh was changed to asynchronous mode, supporting frontend polling of refresh / re-login progress.
++ [Added] Added a re-login feature to the account-pool management page, supporting password login to recover abnormal accounts.
++ [Added] Automatically re-login abnormal accounts after a refresh (can be enabled on the settings page).
++ [Added] Image generation supports parallel mode; multiple images are generated simultaneously using independent threads and accounts.
++ [Added] On image polling timeout, automatically switch accounts and retry (up to 4 times); on connection timeout, retry on the same account with incrementally increasing waits.
++ [Added] The image double-confirmation mechanism and the "check first, then hit" behavior are configurable; when disabled, results can be returned directly without waiting.
++ [Added] Image task progress tracking, showing the current generation step (upload / warmup / fetching token / generating, etc.).
++ [Added] Continued polling after an image timeout; the frontend shows a "Keep waiting" button.
++ [Added] Added config items on the settings page for image double-confirmation, timeout wait time, auto re-login, etc.
++ [Optimization] Optimized scroll-loading performance on the image-generation page, with image lazy loading and saving/restoring the scroll position when switching sessions.
 
 ## 1.4.0 - 2026-05-31
 
-+ [新增] 新增AI生成可编辑PSD文件逆向。
-+ [新增] 新增AI生成可编辑PPT文件逆向。
++ [Added] Added reverse-engineering of AI-generated editable PSD files.
++ [Added] Added reverse-engineering of AI-generated editable PPT files.
 
 ## 1.3.1 - 2026-05-30
 
-+ [新增] 新增ChatGPT搜索调试、Skills。
++ [Added] Added ChatGPT search debugging and Skills.
 
 ## 1.3.0 - 2026-05-30
 
-+ [新增] 新增ChatGPT搜索接口逆向。
++ [Added] Added reverse-engineering of the ChatGPT search interface.
 
 ## 1.2.4 - 2026-05-30
 
-+ [新增] 添加聊天补全缓存与重复请求合并。
-+ [新增] 新增无限画布一键跳转功能
++ [Added] Added chat-completion caching and duplicate-request merging.
++ [Added] Added a one-click jump feature to the infinite canvas.
 
 ## 1.2.3 - 2026-05-29
 
-+ [新增] 新增账号级代理。
-+ [修复] 修复503异常信息、前端邮箱换行问题。
++ [Added] Added account-level proxies.
++ [Fix] Fixed 503 error messages and a frontend email line-wrapping issue.
 
 ## 1.2.2 - 2026-05-29
 
-+ [新增] 新增Codex链路生图、支持2k,4k。
-+ [新增] 支持RT刷新账号信息。
++ [Added] Added Codex-route image generation, supporting 2k and 4k.
++ [Added] Added support for refreshing account info via RT.
 
 ## 1.2.0 - 2026-05-28
 
-+ [新增] 当前版本基线，包含 Web 面板、画图、号池管理、注册机、图片管理、日志管理和设置能力。
-+ [新增] 前端版本号支持点击查看版本更新弹窗，展示当前版本、最新版本和更新日志。
-+ [优化] 优化注册机效率，成功率大幅提高。
-+ [优化] 优化生图页面配置选项。
-
++ [Added] The current version baseline, including the web panel, drawing, account-pool management, registration bot, image management, log management, and settings capabilities.
++ [Added] The frontend version number can be clicked to view the version-update popup, showing the current version, the latest version, and the changelog.
++ [Optimization] Optimized the registration bot's efficiency, greatly increasing the success rate.
++ [Optimization] Optimized the configuration options on the image-generation page.

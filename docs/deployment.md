@@ -1,6 +1,6 @@
-# Docker 部署
+# Docker Deployment
 
-## 部署
+## Deployment
 
 ```bash
 git clone git@github.com:basketikun/chatgpt2api.git
@@ -8,40 +8,40 @@ cd chatgpt2api
 cp config.example.yaml config.yaml
 ```
 
-编辑 `config.yaml` 设置 `api-key`（或通过 `.env` 的 `CHATGPT2API_AUTH_KEY` 覆盖），然后按需选择编排文件：
+Edit `config.yaml` to set `api-key` (or override it via `CHATGPT2API_AUTH_KEY` in `.env`), then choose an orchestration file as needed:
 
-| 文件 | 镜像来源 | WARP 代理 | 端口 |
+| File | Image source | WARP proxy | Port |
 | --- | --- | --- | --- |
-| `docker-compose.yml` | 拉取镜像 | 不带 | 3000 |
-| `docker-compose.warp.yml` | 拉取镜像 | 带 | 3000 |
-| `docker-compose.local.yml` | 本地构建 | 不带 | 8000 |
-| `docker-compose.local.warp.yml` | 本地构建 | 带 | 8000 |
+| `docker-compose.yml` | Pull image | Without | 3000 |
+| `docker-compose.warp.yml` | Pull image | With | 3000 |
+| `docker-compose.local.yml` | Local build | Without | 8000 |
+| `docker-compose.local.warp.yml` | Local build | With | 8000 |
 
 ```bash
 docker compose up -d
 ```
 
-其他文件用 `-f` 指定，例如 `docker compose -f docker-compose.warp.yml up -d`；本地构建加 `--build`。
+Specify other files with `-f`, e.g. `docker compose -f docker-compose.warp.yml up -d`; add `--build` for a local build.
 
-- 面板：`http://localhost:3000`
-- API：`http://localhost:3000/v1`
+- Panel: `http://localhost:3000`
+- API: `http://localhost:3000/v1`
 
-需要持久保留 `config.yaml`、`.env`、`data/`。数据库默认 SQLite（`data/chatgpt2api.db`），可通过 `.env` 的 `DATABASE_URL` 切换为 PostgreSQL / MySQL。
+You need to persist `config.yaml`, `.env`, and `data/`. The database defaults to SQLite (`data/chatgpt2api.db`) and can be switched to PostgreSQL / MySQL via `DATABASE_URL` in `.env`.
 
-## WARP / FlareSolverr 稳定代理
+## WARP / FlareSolverr Stable Proxy
 
-带 `.warp` 的编排文件用于缓解图片链路的 Cloudflare 拦截，会同时启动：
+The orchestration files with `.warp` are used to mitigate Cloudflare blocks on the image route, and start the following together:
 
-- `warp-proxy`：提供 WARP SOCKS5 出口。
-- `privoxy`：把 WARP SOCKS5 转成 HTTP 代理。
-- `flaresolverr`：刷新 Cloudflare clearance。
-- `app`：ChatGPT2API 主服务。
+- `warp-proxy`: provides a WARP SOCKS5 exit.
+- `privoxy`: converts the WARP SOCKS5 into an HTTP proxy.
+- `flaresolverr`: refreshes the Cloudflare clearance.
+- `app`: the ChatGPT2API main service.
 
-使用时把 `config.yaml` 的 `proxy_runtime.enabled` 设为 `true`，也可在后台设置页保存和测试。
+To use it, set `proxy_runtime.enabled` to `true` in `config.yaml`; you can also save and test it on the admin settings page.
 
-只有上游 OpenAI / ChatGPT 请求走稳定代理，账号邮箱、CPA 等辅助链路不受影响。代理优先级：账号自身代理 > 稳定代理 > `config.yaml` 的全局 `proxy`。
+Only upstream OpenAI / ChatGPT requests go through the stable proxy; auxiliary routes such as account email and CPA are unaffected. Proxy priority: the account's own proxy > the stable proxy > the global `proxy` in `config.yaml`.
 
-## 升级
+## Upgrade
 
 ```bash
 git pull
@@ -49,7 +49,7 @@ docker compose pull
 docker compose up -d
 ```
 
-## 常用命令
+## Common Commands
 
 ```bash
 docker compose ps
