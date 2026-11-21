@@ -123,10 +123,10 @@ func (s *AIService) Text(ctx context.Context, modelName string, messages []map[s
 			email = *account.Email
 		}
 		callLog.Update(map[string]any{"account_email": email})
-		callLog.Add("已选择上游账号", map[string]any{"account_email": email})
+		callLog.Add("Selected upstream account", map[string]any{"account_email": email})
 		client := chatgpt.NewOpenAIBackendAPI(token, account.Proxy, s.proxy, s.config).WithAccountID(account.AccountID)
 		emitted := false
-		callLog.Add("开始准备上游请求", map[string]any{"model": backendModel, "thinking_effort": effort, "search": search})
+		callLog.Add("Preparing upstream request", map[string]any{"model": backendModel, "thinking_effort": effort, "search": search})
 		raw, clean := "", ""
 		conversationID, err = client.StartConversation(ctx, messages, backendModel, effort, nil, search, func(value string) error {
 			emitted = true
@@ -156,7 +156,7 @@ func (s *AIService) Text(ctx context.Context, modelName string, messages []map[s
 			break
 		}
 		s.accounts.RecordTextError(ctx, token, err)
-		callLog.Add("上游调用失败", map[string]any{"error": err.Error(), "response_started": emitted})
+		callLog.Add("Upstream call failed", map[string]any{"error": err.Error(), "response_started": emitted})
 		if emitted || !invalidTokenError(err) {
 			break
 		}
@@ -168,12 +168,12 @@ func (s *AIService) Text(ctx context.Context, modelName string, messages []map[s
 	}
 	if err == nil {
 		callLog.Update(map[string]any{"conversation_id": conversationID})
-		callLog.Add("上游 SSE 已完成", map[string]any{"conversation_id": conversationID, "output_chars": output.Len()})
+		callLog.Add("Upstream SSE completed", map[string]any{"conversation_id": conversationID, "output_chars": output.Len()})
 	}
 	if err != nil {
-		callLog.Save("调用失败", "failed", map[string]any{"error": err.Error(), "account_email": email, "conversation_id": conversationID})
+		callLog.Save("Call failed", "failed", map[string]any{"error": err.Error(), "account_email": email, "conversation_id": conversationID})
 	} else {
-		callLog.Save("调用完成", "success", map[string]any{"account_email": email, "conversation_id": conversationID})
+		callLog.Save("Call completed", "success", map[string]any{"account_email": email, "conversation_id": conversationID})
 	}
 	return output.String(), err
 }
@@ -257,7 +257,7 @@ func (s *AIService) StoreProtocol(key string, stream bool, value any) {
 	s.cache[key] = cachedProtocol{Value: data, ExpiresAt: now.Add(time.Duration(s.config.Cache.TTLSeconds) * time.Second)}
 }
 
-// generateImage 选一个账号生成一张图；retryable 表示换号重试可能成功（内容违规和没有可用额度不会重试）。
+// generateImage picks an account and generates one image; retryable means switching accounts may succeed (content-policy violations and no-quota do not retry).
 func (s *AIService) generateImage(ctx context.Context, request ImageRequest, callLog *CallLog, index int) (ImageResult, bool, error) {
 	token, err := s.accounts.ImageToken(ctx, callLog.identity.Routes, callLog.identity.Plans)
 	if err != nil {
@@ -272,7 +272,7 @@ func (s *AIService) generateImage(ctx context.Context, request ImageRequest, cal
 		email = *account.Email
 	}
 	callLog.Update(map[string]any{"account_email": email})
-	callLog.Add("已选择上游账号", map[string]any{"account_email": email, "position": index})
+	callLog.Add("Selected upstream account", map[string]any{"account_email": email, "position": index})
 	var data []byte
 	conversationID := ""
 	if codex {
@@ -280,14 +280,14 @@ func (s *AIService) generateImage(ctx context.Context, request ImageRequest, cal
 		for _, image := range request.Images {
 			encoded = append(encoded, base64.StdEncoding.EncodeToString(image))
 		}
-		callLog.Add("请求 Codex 图片生成", map[string]any{"position": index})
+		callLog.Add("Requesting Codex image generation", map[string]any{"position": index})
 		data, err = chatgpt.NewCodexAPI(token, chatgpt.CodexBaseURL, account.Proxy, s.proxy).WithAccountID(account.AccountID).StartImageGen(ctx, request.Prompt, s.config.Image.CodexModel, s.config.Image.CodexImageModel, encoded, defaultString(request.Size, "2048x2048"), defaultString(request.Quality, "auto"))
 		if err == nil {
-			callLog.Add("Codex 图片生成完成", map[string]any{"position": index})
+			callLog.Add("Codex image generation completed", map[string]any{"position": index})
 		}
 	} else {
 		client := chatgpt.NewOpenAIBackendAPI(token, account.Proxy, s.proxy, s.config).WithAccountID(account.AccountID)
-		callLog.Add("请求上游对话", map[string]any{"position": index, "model": s.config.DefaultModel})
+		callLog.Add("Requesting upstream conversation", map[string]any{"position": index, "model": s.config.DefaultModel})
 		content := []any{map[string]any{"type": "text", "text": imagePrompt(request.Prompt, request.Size, request.Quality)}}
 		for imageIndex, image := range request.Images {
 			content = append(content, map[string]any{"type": "image", "data": image, "name": imageValue(request.ImageNames, imageIndex, "image.png"), "mime": imageValue(request.ImageMIMEs, imageIndex, "image/png")})
@@ -302,7 +302,7 @@ func (s *AIService) generateImage(ctx context.Context, request ImageRequest, cal
 			return nil
 		})
 		if err == nil && policyText.Len() > 0 {
-			// 生成图片后助手也会附带说明文字，只有会话里没有图片时才视为拒绝
+			// After generating the image the assistant also appends explanatory text; only treat it as a refusal when the conversation contains no image.
 			var ids []string
 			if ids, err = client.ImageIDs(ctx, conversationID); err == nil && len(ids) == 0 {
 				err = &ImageError{Err: errors.New(policyText.String()), Status: 400, Type: "invalid_request_error", Code: "content_policy_violation"}
@@ -310,12 +310,12 @@ func (s *AIService) generateImage(ctx context.Context, request ImageRequest, cal
 		}
 		if err == nil {
 			callLog.Update(map[string]any{"conversation_id": conversationID})
-			callLog.Add("上游对话已结束", map[string]any{"conversation_id": conversationID, "position": index})
-			callLog.Add("开始轮询上游图片", map[string]any{"conversation_id": conversationID, "position": index})
+			callLog.Add("Upstream conversation finished", map[string]any{"conversation_id": conversationID, "position": index})
+			callLog.Add("Polling upstream for images", map[string]any{"conversation_id": conversationID, "position": index})
 			var ids []string
 			ids, err = client.PollImages(ctx, conversationID)
 			if err == nil {
-				callLog.Add("获取到上游图片", map[string]any{"conversation_id": conversationID, "image_ids": ids, "position": index})
+				callLog.Add("Received upstream images", map[string]any{"conversation_id": conversationID, "image_ids": ids, "position": index})
 				data, err = client.Download(ctx, conversationID, ids[0])
 			}
 		}
@@ -332,7 +332,7 @@ func (s *AIService) generateImage(ctx context.Context, request ImageRequest, cal
 		return ImageResult{}, true, imageErr
 	}
 	result := ImageResult{B64: base64.StdEncoding.EncodeToString(data), URL: stored.URL, RevisedPrompt: request.Prompt}
-	callLog.Add("图片已保存", map[string]any{"position": index, "url": stored.URL})
+	callLog.Add("Image saved", map[string]any{"position": index, "url": stored.URL})
 	success = true
 	return result, false, nil
 }
@@ -343,12 +343,12 @@ func (s *AIService) Images(ctx context.Context, request ImageRequest, callLog *C
 	}
 	if !s.IsImageModel(request.Model) {
 		err := newImageError(fmt.Errorf("unsupported image model, supported models: %s", s.config.ImageModelName))
-		callLog.Save("调用失败", "failed", map[string]any{"error": err.Error()})
+		callLog.Save("Call failed", "failed", map[string]any{"error": err.Error()})
 		return nil, err
 	}
 	if request.Count < 1 || request.Count > 4 {
 		err := errors.New("n must be between 1 and 4")
-		callLog.Save("调用失败", "failed", map[string]any{"error": err.Error()})
+		callLog.Save("Call failed", "failed", map[string]any{"error": err.Error()})
 		return nil, err
 	}
 	if s.config.BaseURL != "" {
@@ -372,7 +372,7 @@ func (s *AIService) Images(ctx context.Context, request ImageRequest, callLog *C
 					errs <- err
 					return
 				}
-				callLog.Add("更换账号重试", map[string]any{"position": index, "attempt": attempt + 1, "error": err.Error()})
+				callLog.Add("Retrying with another account", map[string]any{"position": index, "attempt": attempt + 1, "error": err.Error()})
 			}
 		}(index)
 	}
@@ -384,14 +384,14 @@ func (s *AIService) Images(ctx context.Context, request ImageRequest, callLog *C
 		if errors.As(err, &imageErr) {
 			detail["account_email"], detail["conversation_id"] = imageErr.AccountEmail, imageErr.ConversationID
 		}
-		callLog.Save("调用失败", "failed", detail)
+		callLog.Save("Call failed", "failed", detail)
 		return nil, err
 	}
 	urls := make([]string, 0, len(results))
 	for _, result := range results {
 		urls = append(urls, result.URL)
 	}
-	callLog.Save("调用完成", "success", map[string]any{"urls": urls})
+	callLog.Save("Call completed", "success", map[string]any{"urls": urls})
 	return results, nil
 }
 
@@ -403,7 +403,7 @@ func newImageError(err error) *ImageError {
 		return imageErr
 	}
 	message := strings.ToLower(err.Error())
-	if strings.Contains(message, "图片额度") || strings.Contains(message, "no available") && strings.Contains(message, "image quota") {
+	if strings.Contains(message, "no available") && strings.Contains(message, "image quota") {
 		return &ImageError{Err: errors.New("no available image quota"), Status: 429, Type: "insufficient_quota", Code: "insufficient_quota"}
 	}
 	if strings.Contains(message, "content policy") || strings.Contains(message, "content_policy") || strings.Contains(message, "safety policy") {
@@ -456,12 +456,13 @@ func applyMasks(images [][]byte, masks [][]byte) [][]byte {
 	return result
 }
 
-// imagePrompt 现在只把质量提示写进正文；尺寸改由 message.metadata.image_generation_settings
-// 的 aspect_ratio 表达，避免把 "2048x2048" 这类客户端参数直接塞给模型。
+// imagePrompt now only writes the quality hint into the body; size is expressed via
+// message.metadata.image_generation_settings' aspect_ratio, avoiding passing client
+// params like "2048x2048" directly to the model.
 func imagePrompt(prompt string, size string, quality string) string {
 	hints := []string{}
 	if quality != "" && quality != "auto" {
-		hints = append(hints, "输出图片质量为 "+quality+"。")
+		hints = append(hints, "Output image quality: "+quality+".")
 	}
 	if len(hints) == 0 {
 		return prompt
@@ -469,7 +470,7 @@ func imagePrompt(prompt string, size string, quality string) string {
 	return prompt + "\n\n" + strings.Join(hints, "")
 }
 
-// imageGenerationSettings 把尺寸换算成网页端支持的宽高比枚举。
+// imageGenerationSettings converts the size into the aspect-ratio enum supported by the web frontend.
 func imageGenerationSettings(size string) map[string]any {
 	parts := strings.Split(strings.ToLower(strings.TrimSpace(size)), "x")
 	if len(parts) != 2 {

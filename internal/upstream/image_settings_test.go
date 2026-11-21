@@ -10,13 +10,13 @@ import (
 	"time"
 )
 
-// TestOpenAIBackendImageSettingsIntegration 验证网页端生图通过
-// message.metadata.image_generation_settings 指定宽高比仍然可用。
+// TestOpenAIBackendImageSettingsIntegration verifies that web image generation
+// can still specify an aspect ratio via message.metadata.image_generation_settings.
 func TestOpenAIBackendImageSettingsIntegration(t *testing.T) {
 	client := openAIBackendClient(t)
 	message := map[string]any{
 		"role":    "user",
-		"content": "画一只橘猫，16:9 横版构图，简洁插画",
+		"content": "Draw an orange cat, 16:9 landscape composition, clean illustration",
 		"image_generation_settings": map[string]any{
 			"aspect_ratio": "16:9",
 			"image_count":  1,
@@ -55,7 +55,7 @@ func TestOpenAIBackendImageEditIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	message := map[string]any{"role": "user", "content": []any{
-		map[string]any{"type": "text", "text": "在图片中央画一个白色圆点"},
+		map[string]any{"type": "text", "text": "Draw a white dot in the center of the image"},
 		map[string]any{"type": "image", "data": buffer.Bytes(), "name": "source.png", "mime": "image/png"},
 	}}
 	conversationID, err := client.StartConversation(context.Background(), []map[string]any{message}, "auto", "", []string{"picture_v2"}, false, func(string) error { return nil })

@@ -80,7 +80,7 @@ func (s *OAuthService) Finish(ctx context.Context, sessionID string, callback st
 		}
 	}
 	if code == "" {
-		return nil, errors.New("缺少 code 或 callback URL")
+		return nil, errors.New("missing code or callback URL")
 	}
 	if state != "" {
 		stateID, _, _ := strings.Cut(state, ".")
@@ -93,10 +93,10 @@ func (s *OAuthService) Finish(ctx context.Context, sessionID string, callback st
 	session, ok := s.sessions[sessionID]
 	s.mu.Unlock()
 	if !ok {
-		return nil, errors.New("OAuth 会话已过期或不存在，请重新生成")
+		return nil, errors.New("the OAuth session has expired or does not exist; please generate a new one")
 	}
 	if state != "" && state != session.State {
-		return nil, errors.New("state 不匹配，请重新生成后重试")
+		return nil, errors.New("state does not match; please regenerate and try again")
 	}
 	payload, _ := json.Marshal(map[string]string{"client_id": openAIPlatformClientID, "code_verifier": session.Verifier, "grant_type": "authorization_code", "code": code, "redirect_uri": openAIRedirectURI})
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, openAIAuthBase+"/api/accounts/oauth/token", strings.NewReader(string(payload)))
@@ -119,7 +119,7 @@ func (s *OAuthService) Finish(ctx context.Context, sessionID string, callback st
 	refresh, _ := result["refresh_token"].(string)
 	idToken, _ := result["id_token"].(string)
 	if response.StatusCode == http.StatusOK && access != "" && refresh == "" {
-		return nil, errors.New("OpenAI 没有返回 refresh_token")
+		return nil, errors.New("OpenAI did not return a refresh_token")
 	}
 	if response.StatusCode != http.StatusOK || access == "" {
 		detail, _ := result["error_description"].(string)
@@ -135,7 +135,7 @@ func (s *OAuthService) Finish(ctx context.Context, sessionID string, callback st
 		if len(detail) > 300 {
 			detail = detail[:300]
 		}
-		return nil, fmt.Errorf("OpenAI 拒绝换 Token (HTTP %d): %s", response.StatusCode, detail)
+		return nil, fmt.Errorf("OpenAI refused to exchange the token (HTTP %d): %s", response.StatusCode, detail)
 	}
 	s.mu.Lock()
 	delete(s.sessions, sessionID)

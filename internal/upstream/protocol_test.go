@@ -113,7 +113,7 @@ func TestGeneratedImageIDsFromMapping(t *testing.T) {
 
 func TestConversationRequestShapeMatchesCapture(t *testing.T) {
 	api := &OpenAIBackendAPI{}
-	message, err := api.convertMessage(context.Background(), map[string]any{"role": "user", "content": "只回复两个字：收到"})
+	message, err := api.convertMessage(context.Background(), map[string]any{"role": "user", "content": "Reply with a single word: received"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestConversationRequestShapeMatchesCapture(t *testing.T) {
 
 func TestImageRequestAddsSystemHints(t *testing.T) {
 	api := &OpenAIBackendAPI{}
-	message, err := api.convertMessage(context.Background(), map[string]any{"role": "user", "content": "画一个红苹果"})
+	message, err := api.convertMessage(context.Background(), map[string]any{"role": "user", "content": "Draw a red apple"})
 	if err != nil {
 		t.Fatal(err)
 	}

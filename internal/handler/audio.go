@@ -11,10 +11,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AudioHandler 提供 OpenAI 兼容的语音接口：
+// AudioHandler provides OpenAI-compatible audio endpoints:
 //
-//	POST /v1/audio/speech          文本转语音（ChatGPT 官网 voice 模型）
-//	POST /v1/audio/transcriptions  语音转文本
+//	POST /v1/audio/speech          text-to-speech (ChatGPT web voice model)
+//	POST /v1/audio/transcriptions  speech-to-text
 type AudioHandler struct {
 	service *service.AudioService
 	logs    *service.LogService
@@ -37,7 +37,7 @@ func (h *AudioHandler) speech(c *gin.Context) {
 		ResponseFormat string `json:"response_format"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
-		writeError(c, http.StatusBadRequest, errors.New("请求体不是合法的 JSON"))
+		writeError(c, http.StatusBadRequest, errors.New("request body is not valid JSON"))
 		return
 	}
 	if strings.TrimSpace(body.Input) == "" {
@@ -47,14 +47,14 @@ func (h *AudioHandler) speech(c *gin.Context) {
 	if body.Model == "" {
 		body.Model = "gpt-tts"
 	}
-	callLog := h.logs.NewCallLog(identity(c), c.Request.URL.Path, body.Model, "语音合成", body.Input, time.Now())
+	callLog := h.logs.NewCallLog(identity(c), c.Request.URL.Path, body.Model, "Speech synthesis", body.Input, time.Now())
 	data, contentType, err := h.service.Speech(c.Request.Context(), service.SpeechRequest{Input: body.Input, Voice: body.Voice, Model: body.Model, Format: body.ResponseFormat}, callLog)
 	if err != nil {
-		callLog.Save("语音合成失败", "failed", map[string]any{"error": err.Error()})
+		callLog.Save("Speech synthesis failed", "failed", map[string]any{"error": err.Error()})
 		writeError(c, http.StatusBadGateway, err)
 		return
 	}
-	callLog.Save("语音合成完成", "success", map[string]any{"bytes": len(data), "content_type": contentType})
+	callLog.Save("Speech synthesis complete", "success", map[string]any{"bytes": len(data), "content_type": contentType})
 	c.Data(http.StatusOK, contentType, data)
 }
 
@@ -71,21 +71,21 @@ func (h *AudioHandler) transcriptions(c *gin.Context) {
 		return
 	}
 	if len(data) == 0 {
-		writeError(c, http.StatusBadRequest, errors.New("上传的音频是空的"))
+		writeError(c, http.StatusBadRequest, errors.New("the uploaded audio is empty"))
 		return
 	}
 	contentType := header.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
-	callLog := h.logs.NewCallLog(identity(c), c.Request.URL.Path, c.DefaultPostForm("model", "gpt-transcribe"), "语音转写", header.Filename, time.Now())
+	callLog := h.logs.NewCallLog(identity(c), c.Request.URL.Path, c.DefaultPostForm("model", "gpt-transcribe"), "Transcription", header.Filename, time.Now())
 	text, err := h.service.Transcribe(c.Request.Context(), data, header.Filename, contentType, callLog)
 	if err != nil {
-		callLog.Save("语音转写失败", "failed", map[string]any{"error": err.Error()})
+		callLog.Save("Transcription failed", "failed", map[string]any{"error": err.Error()})
 		writeError(c, http.StatusBadGateway, err)
 		return
 	}
-	callLog.Save("语音转写完成", "success", map[string]any{"chars": len([]rune(text))})
+	callLog.Save("Transcription complete", "success", map[string]any{"chars": len([]rune(text))})
 	if c.PostForm("response_format") == "text" {
 		c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(text))
 		return

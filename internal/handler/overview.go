@@ -24,7 +24,7 @@ func (h *OverviewHandler) RegisterRoutes(router *gin.RouterGroup) {
 func (h *OverviewHandler) calls(c *gin.Context) {
 	period := c.Query("period")
 	if period != "24h" && period != "7d" {
-		writeError(c, http.StatusBadRequest, errors.New("请选择近 24 小时或近 7 天"))
+		writeError(c, http.StatusBadRequest, errors.New("please select the last 24 hours or the last 7 days"))
 		return
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)

@@ -11,7 +11,7 @@ import (
 	http "github.com/bogdanfinn/fhttp"
 )
 
-// ErrTokenInvalidated 表示上游返回 401，访问令牌已失效。
+// ErrTokenInvalidated indicates the upstream returned 401 and the access token has expired.
 var ErrTokenInvalidated = errors.New("token invalidated")
 
 type UpstreamHTTPError struct {

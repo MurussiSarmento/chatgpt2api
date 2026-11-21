@@ -116,7 +116,7 @@ func (r *Repository) ReplaceTaskResults(ctx context.Context, taskID int64, items
 }
 
 func (r *Repository) FailRunningTasks(ctx context.Context, now time.Time) error {
-	return r.db.WithContext(ctx).Model(&Task{}).Where("status IN ?", []string{"queued", "running"}).Updates(map[string]any{"status": "error", "error": "服务已重启，未完成的任务已中断", "updated_at": now, "ended_at": now}).Error
+	return r.db.WithContext(ctx).Model(&Task{}).Where("status IN ?", []string{"queued", "running"}).Updates(map[string]any{"status": "error", "error": "the service has restarted; unfinished tasks were interrupted", "updated_at": now, "ended_at": now}).Error
 }
 
 func (r *Repository) DeleteFinishedTasksBefore(ctx context.Context, cutoff time.Time) error {

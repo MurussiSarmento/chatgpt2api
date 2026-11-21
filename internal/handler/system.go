@@ -60,7 +60,7 @@ func (h *SystemHandler) settings(c *gin.Context) {
 func (h *SystemHandler) updateSettings(c *gin.Context) {
 	var body map[string]any
 	if err := c.ShouldBindJSON(&body); err != nil {
-		writeError(c, http.StatusBadRequest, errors.New("设置内容格式不正确"))
+		writeError(c, http.StatusBadRequest, errors.New("invalid settings format"))
 		return
 	}
 	result, err := h.config.Update(body)

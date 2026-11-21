@@ -13,7 +13,7 @@ const speechCacheTTL = 10 * time.Minute
 const speechCacheMaxEntries = 32
 const speechCacheMaxBytes = 4 << 20
 
-// AudioService exposes ChatGPT 官网的语音能力（TTS / STT）为标准 OpenAI 音频接口。
+// AudioService exposes the ChatGPT web voice capabilities (TTS / STT) as standard OpenAI audio endpoints.
 type AudioService struct {
 	accounts *AccountService
 	logs     *LogService
@@ -33,7 +33,7 @@ func NewAudioService(accounts *AccountService, logs *LogService, proxy *ProxySer
 	return &AudioService{accounts: accounts, logs: logs, proxy: proxy, config: config, cache: map[string]cachedSpeech{}}
 }
 
-// 合成一次要经过一轮上游对话，同一段文本重复合成就没必要再跑一遍。
+// Synthesizing once requires a full round of upstream conversation, so there's no need to run it again for repeated synthesis of the same text.
 func (s *AudioService) cachedSpeech(key string) ([]byte, string, bool) {
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
@@ -70,7 +70,7 @@ type SpeechRequest struct {
 	Format string
 }
 
-// Speech 把文本合成为语音，返回音频字节与 Content-Type。
+// Speech synthesizes text into speech and returns the audio bytes and Content-Type.
 func (s *AudioService) Speech(ctx context.Context, request SpeechRequest, callLog *CallLog) ([]byte, string, error) {
 	voice, err := chatgpt.ResolveSpeechVoice(request.Voice)
 	if err != nil {
@@ -78,7 +78,7 @@ func (s *AudioService) Speech(ctx context.Context, request SpeechRequest, callLo
 	}
 	cacheKey := request.Input + "\x00" + voice + "\x00" + request.Format
 	if data, contentType, ok := s.cachedSpeech(cacheKey); ok {
-		callLog.Add("命中语音缓存", nil)
+		callLog.Add("Speech cache hit", nil)
 		return data, contentType, nil
 	}
 	token, err := s.accounts.TextTokenForModel(ctx, nil, nil, "auto")
@@ -92,19 +92,19 @@ func (s *AudioService) Speech(ctx context.Context, request SpeechRequest, callLo
 	if account.Email != nil {
 		callLog.Update(map[string]any{"account_email": *account.Email})
 	}
-	callLog.Add("已选择上游账号", map[string]any{"account_email": account.Email})
+	callLog.Add("Upstream account selected", map[string]any{"account_email": account.Email})
 	client := chatgpt.NewOpenAIBackendAPI(token, account.Proxy, s.proxy, s.config).WithAccountID(account.AccountID)
 	started := time.Now()
 	data, contentType, err := client.Speak(ctx, request.Input, voice, request.Format)
 	if err != nil {
 		return nil, "", err
 	}
-	callLog.Add("上游返回音频", map[string]any{"elapsed_ms": time.Since(started).Milliseconds(), "bytes": len(data)})
+	callLog.Add("Upstream returned audio", map[string]any{"elapsed_ms": time.Since(started).Milliseconds(), "bytes": len(data)})
 	s.storeSpeech(cacheKey, data, contentType)
 	return data, contentType, nil
 }
 
-// Transcribe 把音频转写为文本。
+// Transcribe converts audio into text.
 func (s *AudioService) Transcribe(ctx context.Context, data []byte, filename string, contentType string, callLog *CallLog) (string, error) {
 	token, err := s.accounts.TextTokenForModel(ctx, nil, nil, "auto")
 	if err != nil {
@@ -117,7 +117,7 @@ func (s *AudioService) Transcribe(ctx context.Context, data []byte, filename str
 	if account.Email != nil {
 		callLog.Update(map[string]any{"account_email": *account.Email})
 	}
-	callLog.Add("已选择上游账号", map[string]any{"account_email": account.Email})
+	callLog.Add("Upstream account selected", map[string]any{"account_email": account.Email})
 	client := chatgpt.NewOpenAIBackendAPI(token, account.Proxy, s.proxy, s.config).WithAccountID(account.AccountID)
 	return client.Transcribe(ctx, data, filename, contentType)
 }

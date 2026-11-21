@@ -19,7 +19,7 @@ type Account struct {
 	AccountID     string  `gorm:"size:255;not null"`
 	Type          string  `gorm:"size:32;not null;default:free"`
 	IsCodex       bool    `gorm:"not null;default:false"`
-	Status        string  `gorm:"size:32;not null;default:正常"`
+	Status        string  `gorm:"size:32;not null;default:active"`
 	Quota         int     `gorm:"not null;default:0"`
 	Proxy         string  `gorm:"type:text;not null"`
 	Remaining     int     `gorm:"not null;default:0"`
@@ -34,6 +34,16 @@ type Account struct {
 }
 
 func (Account) TableName() string { return "accounts" }
+
+// Account status values. Stored in the accounts.status column and compared
+// across queries and business logic, so these constants are the single source
+// of truth — never inline the raw string literals.
+const (
+	StatusActive   = "active"
+	StatusLimited  = "limited"
+	StatusAbnormal = "abnormal"
+	StatusDisabled = "disabled"
+)
 
 func (r *Repository) AccountPage(ctx context.Context, page int, pageSize int, query string, accountType string, status string) ([]Account, int64, []string, error) {
 	db := r.db.WithContext(ctx).Model(&Account{})
@@ -76,7 +86,7 @@ func (r *Repository) AccountTypeCounts(ctx context.Context) (map[string]int64, e
 		Type  string
 		Count int64
 	}
-	if err := r.db.WithContext(ctx).Model(&Account{}).Select("type, count(*) AS count").Where("status NOT IN ?", []string{"禁用", "异常"}).Group("type").Scan(&rows).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&Account{}).Select("type, count(*) AS count").Where("status NOT IN ?", []string{StatusDisabled, StatusAbnormal}).Group("type").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	result := make(map[string]int64, len(rows))
@@ -88,13 +98,13 @@ func (r *Repository) AccountTypeCounts(ctx context.Context) (map[string]int64, e
 
 func (r *Repository) ActiveAccounts(ctx context.Context) ([]Account, error) {
 	var items []Account
-	err := r.db.WithContext(ctx).Where("status NOT IN ?", []string{"禁用", "异常"}).Order("id").Find(&items).Error
+	err := r.db.WithContext(ctx).Where("status NOT IN ?", []string{StatusDisabled, StatusAbnormal}).Order("id").Find(&items).Error
 	return items, err
 }
 
-// NextTextAccount 取最久未使用的可用账号；types 为 nil 表示不限套餐
+// NextTextAccount returns the least-recently-used available account; types == nil means no plan restriction.
 func (r *Repository) NextTextAccount(ctx context.Context, types []string, excludedEmails []string) (Account, error) {
-	db := r.db.WithContext(ctx).Where("access_token <> '' AND status NOT IN ?", []string{"禁用", "异常"})
+	db := r.db.WithContext(ctx).Where("access_token <> '' AND status NOT IN ?", []string{StatusDisabled, StatusAbnormal})
 	if types != nil {
 		db = db.Where("type IN ?", types)
 	}
@@ -209,7 +219,7 @@ func (r *Repository) TouchAccount(ctx context.Context, email string, now string)
 
 func (r *Repository) AcquireImageAccount(ctx context.Context, routes []string, plans []string, concurrency int, attempted map[string]bool) (Account, bool, error) {
 	var candidates []Account
-	db := r.db.WithContext(ctx).Where("status = ? AND quota > 0", "正常")
+	db := r.db.WithContext(ctx).Where("status = ? AND quota > 0", StatusActive)
 	webRoute := slices.Contains(routes, "web")
 	if !webRoute {
 		db = db.Where("is_codex = ?", true)
@@ -227,7 +237,7 @@ func (r *Repository) AcquireImageAccount(ctx context.Context, routes []string, p
 		}
 		claim := r.db.WithContext(ctx).Model(&Account{}).Where(
 			"id = ? AND status = ? AND quota > 0 AND image_inflight < ?",
-			candidate.ID, "正常", concurrency,
+			candidate.ID, StatusActive, concurrency,
 		)
 		if !webRoute {
 			claim = claim.Where("is_codex = ?", true)
@@ -260,7 +270,7 @@ func (r *Repository) ReleaseImageAccount(ctx context.Context, email string, succ
 		values["success"] = gorm.Expr("success + 1")
 		values["quota"] = gorm.Expr("CASE WHEN quota > 0 THEN quota - 1 ELSE 0 END")
 		values["remaining"] = gorm.Expr("CASE WHEN remaining > 0 THEN remaining - 1 ELSE 0 END")
-		values["status"] = gorm.Expr("CASE WHEN quota <= 1 THEN ? WHEN status = ? THEN ? ELSE status END", "限流", "限流", "正常")
+		values["status"] = gorm.Expr("CASE WHEN quota <= 1 THEN ? WHEN status = ? THEN ? ELSE status END", StatusLimited, StatusLimited, StatusActive)
 	} else {
 		values["fail"] = gorm.Expr("fail + 1")
 	}
@@ -300,13 +310,13 @@ func (r *Repository) AccountSummary(ctx context.Context) (map[string]int64, erro
 	for _, row := range rows {
 		result["total"] += row.Count
 		switch row.Status {
-		case "正常":
+		case StatusActive:
 			result["active"], result["quota"] = row.Count, row.Quota
-		case "限流":
+		case StatusLimited:
 			result["limited"] = row.Count
-		case "异常":
+		case StatusAbnormal:
 			result["abnormal"] = row.Count
-		case "禁用":
+		case StatusDisabled:
 			result["disabled"] = row.Count
 		}
 	}

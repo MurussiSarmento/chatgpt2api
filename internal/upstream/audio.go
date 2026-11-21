@@ -18,10 +18,10 @@ import (
 
 const speechRetryBudgetSeconds = 90.0
 
-// speechVoices 是上游 /backend-api/synthesize 当前接受的音色标识。
-// 真实网页端语音列表来自 GET /backend-api/settings/voices，返回
-// juniper/maple/cove/breeze/orbit/glimmer/ember/fathom/vale；
-// 该接口同时接受 OpenAI 音色名（alloy/ash/...），因此这里原样透传，不再做映射。
+// speechVoices are the voice identifiers currently accepted by the upstream /backend-api/synthesize.
+// The real web voice list comes from GET /backend-api/settings/voices, which returns
+// juniper/maple/cove/breeze/orbit/glimmer/ember/fathom/vale;
+// that endpoint also accepts OpenAI voice names (alloy/ash/...), so they are passed through as-is with no mapping.
 var speechVoices = map[string]bool{
 	"juniper": true, "maple": true, "cove": true, "breeze": true, "orbit": true,
 	"glimmer": true, "ember": true, "fathom": true, "vale": true,
@@ -29,7 +29,7 @@ var speechVoices = map[string]bool{
 	"onyx": true, "nova": true, "sage": true, "shimmer": true,
 }
 
-// ResolveSpeechVoice 接受官网音色名与 OpenAI 音色名，原样返回。
+// ResolveSpeechVoice accepts both web voice names and OpenAI voice names, returning them as-is.
 func ResolveSpeechVoice(name string) (string, error) {
 	voice := strings.ToLower(strings.TrimSpace(name))
 	if voice == "" {
@@ -38,7 +38,7 @@ func ResolveSpeechVoice(name string) (string, error) {
 	if speechVoices[voice] {
 		return voice, nil
 	}
-	return "", fmt.Errorf("不支持的音色 %q，可用音色：%s", name, strings.Join(SpeechVoiceNames(), ", "))
+	return "", fmt.Errorf("unsupported voice %q, available voices: %s", name, strings.Join(SpeechVoiceNames(), ", "))
 }
 
 // SpeechVoiceNames lists the accepted voice names, official names first.
@@ -78,7 +78,7 @@ func (u *OpenAIBackendAPI) Synthesize(ctx context.Context, conversationID string
 // assistant turn. An instant model keeps that turn cheap — we only need it to
 // echo text we already have.
 func (u *OpenAIBackendAPI) Speak(ctx context.Context, text string, voice string, format string) ([]byte, string, error) {
-	prompt := "请原样输出下面这段文字，一个字都不要改写、增删或解释，直接输出正文：\n\n" + text
+	prompt := "Output the following text verbatim. Do not rewrite, add, remove, or explain a single character; output the body directly:\n\n" + text
 	conversationID, messageID, err := u.echoTurn(ctx, prompt)
 	if err != nil {
 		return nil, "", err
@@ -89,7 +89,7 @@ func (u *OpenAIBackendAPI) Speak(ctx context.Context, text string, voice string,
 			return nil, "", err
 		}
 		if messageID = latestAssistantMessageID(detail); messageID == "" {
-			return nil, "", fmt.Errorf("上游没有返回可用于合成的消息，conversation_id=%s", conversationID)
+			return nil, "", fmt.Errorf("upstream did not return a message usable for synthesis, conversation_id=%s", conversationID)
 		}
 	}
 	return u.Synthesize(ctx, conversationID, messageID, voice, format)

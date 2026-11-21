@@ -67,7 +67,7 @@ func NewOpenAIBackendAPI(token string, accountProxy string, proxy ClientProvider
 	return &OpenAIBackendAPI{baseURL: chatGPTBaseURL, accessToken: token, accountProxy: accountProxy, proxy: proxy, options: options, deviceID: uuid.NewString(), sessionID: uuid.NewString(), build: defaultBuildNumber, version: defaultDataBuild}
 }
 
-// WithAccountID 设置 ChatGPT-Account-ID；网页端在账号有 account id 时会带上该头。
+// WithAccountID sets the ChatGPT-Account-ID; the web client includes this header when the account has an account id.
 func (u *OpenAIBackendAPI) WithAccountID(accountID string) *OpenAIBackendAPI {
 	u.accountID = accountID
 	return u
@@ -191,9 +191,9 @@ func (u *OpenAIBackendAPI) startConversationWithMessage(ctx context.Context, mes
 	return readConversationSSEWithMessage(response.Body, delta, requireText, created)
 }
 
-// prepareConversation 在发起对话前换取 conduit token。
-// 真实网页端的 prepare 是精简载荷：不带 messages / partial_query，只带本轮
-// 模型、父消息、system_hints、附件元数据与准备状态；生图模型返回空值时不带该头。
+// prepareConversation exchanges for a conduit token before starting a conversation.
+// The real web prepare uses a minimal payload: no messages / partial_query, only this turn's
+// model, parent message, system_hints, attachment metadata, and preparation state; image models return an empty value and the header is omitted.
 func (u *OpenAIBackendAPI) prepareConversation(ctx context.Context, model string, hints []string, mimeTypes []string, uploadIDs []string, traceID string) (string, error) {
 	body := preparePayload(model, hints, mimeTypes, uploadIDs)
 	response, err := u.requestRetry(ctx, http.MethodPost, "/backend-api/f/conversation/prepare", body, map[string]string{"X-OAI-Turn-Trace-Id": traceID, "X-OAI-MCP-Form-Version": "2"})
@@ -227,7 +227,7 @@ func preparePayload(model string, hints []string, mimeTypes []string, uploadIDs 
 	return body
 }
 
-// conversationAttachments 汇总本轮消息里的附件 MIME 与上传 ID，供 prepare 使用。
+// conversationAttachments collects the attachment MIME types and upload IDs from this turn's messages for prepare to use.
 func conversationAttachments(messages []map[string]any) ([]string, []string) {
 	mimeSet, idSet := map[string]bool{}, map[string]bool{}
 	mimeTypes, uploadIDs := []string{}, []string{}
@@ -262,8 +262,8 @@ func conversationAttachments(messages []map[string]any) ([]string, []string) {
 	return mimeTypes, uploadIDs
 }
 
-// Conversation 读取会话详情。网页端主路径是复数接口并返回 messages；
-// 若该接口不可用再回退到 bundle 里的单数接口（返回 mapping 节点树）。
+// Conversation reads conversation details. The web client's main path is the plural endpoint, which returns messages;
+// if that endpoint is unavailable, it falls back to the singular endpoint in the bundle (which returns a mapping node tree).
 func (u *OpenAIBackendAPI) Conversation(ctx context.Context, id string) (map[string]any, error) {
 	response, err := u.requestRetry(ctx, http.MethodGet, "/backend-api/conversations/"+id+"?num_turns=10&include_has_versions=true", nil, nil)
 	if err != nil {
@@ -278,7 +278,7 @@ func (u *OpenAIBackendAPI) Conversation(ctx context.Context, id string) (map[str
 	return result, err
 }
 
-// DeleteConversation 调用网页端删除会话接口。
+// DeleteConversation calls the web client's delete-conversation endpoint.
 func (u *OpenAIBackendAPI) DeleteConversation(ctx context.Context, id string) error {
 	response, err := u.request(ctx, http.MethodDelete, "/backend-api/conversation/id/"+id, nil, nil)
 	if err == nil {
@@ -307,10 +307,10 @@ func (u *OpenAIBackendAPI) PollImagesFor(ctx context.Context, conversationID str
 		case <-time.After(time.Duration(u.options.ImagePollIntervalSeconds * float64(time.Second))):
 		}
 	}
-	return nil, errors.New("ChatGPT 生图超时")
+	return nil, errors.New("ChatGPT image generation timed out")
 }
 
-// ImageIDs 读取会话一次，返回其中已生成的图片 ID。
+// ImageIDs reads the conversation once and returns the already-generated image IDs within it.
 func (u *OpenAIBackendAPI) ImageIDs(ctx context.Context, conversationID string) ([]string, error) {
 	detail, err := u.Conversation(ctx, conversationID)
 	return generatedImageIDs(detail), err
@@ -496,9 +496,9 @@ func (u *OpenAIBackendAPI) bootstrap(ctx context.Context) error {
 	return nil
 }
 
-// conversationPayload 构造真实网页端 /backend-api/f/conversation 的提交载荷。
-// 以 2026-11 浏览器抓包为准：保留 turn_attribution / genui_state_snapshots /
-// client_prepare_state，正常对话不带 conversation_mode 与空 system_hints。
+// conversationPayload builds the submission payload for the real web client's /backend-api/f/conversation.
+// Based on a 2026-11 browser capture: it keeps turn_attribution / genui_state_snapshots /
+// client_prepare_state, and a normal conversation carries no conversation_mode and empty system_hints.
 func (u *OpenAIBackendAPI) conversationPayload(messages []map[string]any, model string, effort string, hints []string, search bool) map[string]any {
 	if search && !containsString(hints, "search") {
 		hints = append(hints, "search")
@@ -530,8 +530,8 @@ func containsString(values []string, target string) bool {
 	return false
 }
 
-// applySystemHints 把本轮 system hints 同时写到用户消息 metadata，
-// 与网页端生图请求保持一致。
+// applySystemHints also writes this turn's system hints into the user message metadata,
+// matching the web client's image-generation request.
 func applySystemHints(messages []map[string]any, hints []string) {
 	if len(hints) == 0 || len(messages) == 0 {
 		return
@@ -678,9 +678,9 @@ func (u *OpenAIBackendAPI) requestRetryBudget(ctx context.Context, method string
 	return response, nil
 }
 
-// conversationMessages 返回会话详情中按时间排序的消息。
-// 新会话详情可能只返回 mapping（节点树），messages 为空；优先沿 current_node
-// 回溯出当前分支，回溯失败时再退回按 create_time 排序的全量节点。
+// conversationMessages returns the messages from the conversation details sorted by time.
+// New conversation details may return only a mapping (node tree) with empty messages; it first walks back
+// along current_node to reconstruct the current branch, and falls back to all nodes sorted by create_time if that fails.
 func conversationMessages(detail map[string]any) []map[string]any {
 	items, _ := detail["messages"].([]any)
 	result := make([]map[string]any, 0, len(items))

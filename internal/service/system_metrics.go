@@ -47,16 +47,16 @@ func (s *OverviewService) System(ctx context.Context) *SystemOverview {
 	result := &SystemOverview{Errors: map[string]string{}}
 	self, err := selfProcess()
 	if err != nil {
-		result.Errors["process"] = "本进程数据读取失败: " + err.Error()
+		result.Errors["process"] = "failed to read current process data: " + err.Error()
 	}
 	memory, err := mem.VirtualMemoryWithContext(ctx)
 	if err != nil {
-		result.Errors["memory"] = "内存数据读取失败: " + err.Error()
+		result.Errors["memory"] = "failed to read memory data: " + err.Error()
 	} else {
 		result.Memory = &MemoryMetric{Total: memory.Total, Used: memory.Used, Available: memory.Available, Percent: memory.UsedPercent}
 		if self != nil {
 			if info, err := self.MemoryInfoWithContext(ctx); err != nil {
-				result.Errors["process"] = "本进程内存读取失败: " + err.Error()
+				result.Errors["process"] = "failed to read current process memory: " + err.Error()
 			} else {
 				result.Memory.Process = info.RSS
 				result.Memory.ProcessPercent = float64(info.RSS) / float64(memory.Total) * 100
@@ -65,11 +65,11 @@ func (s *OverviewService) System(ctx context.Context) *SystemOverview {
 	}
 	path, err := os.Getwd()
 	if err != nil {
-		result.Errors["disk"] = "运行目录读取失败: " + err.Error()
+		result.Errors["disk"] = "failed to read the working directory: " + err.Error()
 	} else {
 		usage, err := disk.UsageWithContext(ctx, path)
 		if err != nil {
-			result.Errors["disk"] = "磁盘数据读取失败: " + err.Error()
+			result.Errors["disk"] = "failed to read disk data: " + err.Error()
 		} else {
 			result.Disk = &DiskMetric{Path: usage.Path, Total: usage.Total, Used: usage.Used, Free: usage.Free, Percent: usage.UsedPercent}
 		}

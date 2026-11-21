@@ -63,7 +63,7 @@ func TestOpenAIBackendFilesIntegration(t *testing.T) {
 func TestOpenAIBackendConversationIntegration(t *testing.T) {
 	client := openAIBackendClient(t)
 	var first strings.Builder
-	conversationID, err := client.StartConversation(context.Background(), []map[string]any{{"role": "user", "content": "记住数字 42"}}, "gpt-6-mini", "", nil, false, func(value string) error { first.WriteString(value); return nil })
+	conversationID, err := client.StartConversation(context.Background(), []map[string]any{{"role": "user", "content": "Remember the number 42"}}, "gpt-6-mini", "", nil, false, func(value string) error { first.WriteString(value); return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestOpenAIBackendConversationIntegration(t *testing.T) {
 func TestOpenAIBackendSearchIntegration(t *testing.T) {
 	client := openAIBackendClient(t)
 	var output strings.Builder
-	conversationID, err := client.StartConversation(context.Background(), []map[string]any{{"role": "user", "content": "搜索 chatgpt2api 有关的内容"}}, "gpt-6-mini", "", nil, true, func(value string) error { output.WriteString(value); return nil })
+	conversationID, err := client.StartConversation(context.Background(), []map[string]any{{"role": "user", "content": "Search for content related to chatgpt2api"}}, "gpt-6-mini", "", nil, true, func(value string) error { output.WriteString(value); return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestOpenAIBackendSearchIntegration(t *testing.T) {
 
 func TestOpenAIBackendImageIntegration(t *testing.T) {
 	client := openAIBackendClient(t)
-	image, _, err := client.GenerateImage(context.Background(), "生成一只鸡", "gpt-image-2.6", nil)
+	image, _, err := client.GenerateImage(context.Background(), "Generate a chicken", "gpt-image-2.6", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestOpenAIBackendImageIntegration(t *testing.T) {
 
 func TestOpenAIBackendAudioIntegration(t *testing.T) {
 	client := openAIBackendClient(t)
-	audio, contentType, err := client.Speak(context.Background(), "你好，这是一段语音合成的测试。", "cove", "mp3")
+	audio, contentType, err := client.Speak(context.Background(), "Hello, this is a speech synthesis test.", "cove", "mp3")
 	if err != nil {
 		t.Fatal(err)
 	}

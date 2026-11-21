@@ -45,7 +45,7 @@ func (h *SourceHandler) cpas(c *gin.Context) {
 func (h *SourceHandler) createCPA(c *gin.Context) {
 	var body CreateCPARequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		writeError(c, http.StatusBadRequest, errors.New("请填写服务地址和密钥"))
+		writeError(c, http.StatusBadRequest, errors.New("please fill in the service address and key"))
 		return
 	}
 	item, err := h.service.SaveCPA(c.Request.Context(), repository.CPA{Name: body.Name, BaseURL: body.BaseURL, SecretKey: body.SecretKey})
@@ -139,7 +139,7 @@ func (h *SourceHandler) servers(c *gin.Context) {
 func (h *SourceHandler) createServer(c *gin.Context) {
 	var body CreateSubRequest
 	if err := c.ShouldBindJSON(&body); err != nil || body.BaseURL == "" || body.APIKey == "" && (body.Email == "" || body.Password == "") {
-		writeError(c, http.StatusBadRequest, errors.New("请填写服务地址以及登录信息或密钥"))
+		writeError(c, http.StatusBadRequest, errors.New("please fill in the service address and either the login information or the key"))
 		return
 	}
 	item, err := h.service.SaveSub(c.Request.Context(), repository.Sub{Name: body.Name, BaseURL: body.BaseURL, Email: body.Email, Password: body.Password, APIKey: body.APIKey, GroupID: body.GroupID})

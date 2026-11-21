@@ -224,7 +224,7 @@ func (s *SourceService) ImportSub(ctx context.Context, sub repository.Sub, ids [
 	return sub.ImportJob, nil
 }
 
-// 按批读取令牌并写入号池；导入全部时逐页向对方服务取账号编号。
+// Reads tokens in batches and writes them to the account pool; when importing all, fetches account IDs page by page from the remote service.
 func (s *SourceService) runSubImport(sub repository.Sub, ids []string, all bool, search string) {
 	ctx := context.Background()
 	const batchSize = 100
@@ -237,7 +237,7 @@ func (s *SourceService) runSubImport(sub repository.Sub, ids []string, all bool,
 		if all {
 			items, _, err := s.SubAccounts(ctx, sub, page, batchSize, search)
 			if err != nil {
-				job.Errors = append(job.Errors, map[string]any{"name": fmt.Sprintf("第 %d 页", page), "error": err.Error()})
+				job.Errors = append(job.Errors, map[string]any{"name": fmt.Sprintf("page %d", page), "error": err.Error()})
 				break
 			}
 			for _, item := range items {

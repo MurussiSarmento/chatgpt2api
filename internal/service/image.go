@@ -305,7 +305,7 @@ func (s *ImageService) Zip(ctx context.Context, paths []string, output io.Writer
 
 func (s *ImageService) Sync(ctx context.Context) (map[string]int, error) {
 	if !s.config.Image.Storage.Enabled || s.config.Image.Storage.Mode == "local" {
-		return nil, errors.New("WebDAV 图片存储未启用")
+		return nil, errors.New("WebDAV image storage is not enabled")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

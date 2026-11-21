@@ -31,7 +31,7 @@ type Config struct {
 	mu             sync.RWMutex
 }
 
-// 未配置对外生图模型名称时使用的名称
+// Name used when no public text-to-image model name is configured
 const defaultImageModelName = "gpt-image-2.6"
 
 type AccountSettings struct {
@@ -122,7 +122,7 @@ func Load(path string) (*Config, error) {
 		cfg.Version = strings.TrimSpace(string(data))
 	}
 	if cfg.APIKey == "" {
-		return nil, errors.New("请先在 config.yaml 或 CHATGPT2API_AUTH_KEY 中设置管理员密钥")
+		return nil, errors.New("please set the administrator key in config.yaml or CHATGPT2API_AUTH_KEY first")
 	}
 	return cfg, nil
 }

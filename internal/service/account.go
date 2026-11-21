@@ -51,7 +51,7 @@ func (s *AccountService) Add(ctx context.Context, items []repository.Account) (i
 			item.CreatedAt = now
 		}
 		if item.Status == "" {
-			item.Status = "正常"
+			item.Status = repository.StatusActive
 		}
 		if item.Type == "" {
 			item.Type = "free"
@@ -160,12 +160,12 @@ func (s *AccountService) ImageToken(ctx context.Context, routes []string, plans 
 		attempts++
 		attempted[*selected.Email] = true
 		account, err := s.remoteInfo(ctx, selected.AccessToken)
-		if err == nil && account.Status == "正常" && account.Quota > 0 && (account.IsCodex || slices.Contains(routes, "web")) && (len(plans) == 0 || slices.Contains(plans, account.Type)) {
+		if err == nil && account.Status == repository.StatusActive && account.Quota > 0 && (account.IsCodex || slices.Contains(routes, "web")) && (len(plans) == 0 || slices.Contains(plans, account.Type)) {
 			return account.AccessToken, nil
 		}
 		s.repo.ReleaseImageAccountByID(ctx, selected.ID)
 	}
-	return "", fmt.Errorf("当前没有可用图片额度（已尝试 %d 个账号）", len(attempted))
+	return "", fmt.Errorf("no available image quota (tried %d accounts)", len(attempted))
 }
 
 func (s *AccountService) ReleaseImageToken(ctx context.Context, token string, success bool) {
@@ -214,13 +214,13 @@ func (s *AccountService) RefreshScheduled(ctx context.Context) error {
 	now := time.Now().UTC()
 	checks, keepalive, expiring := []string{}, []repository.Account{}, map[string]bool{}
 	for _, item := range items {
-		if item.Status == "正常" || item.Status == "限流" {
+		if item.Status == repository.StatusActive || item.Status == repository.StatusLimited {
 			checks = append(checks, item.AccessToken)
 			if tokenNeedsRefresh(item.AccessToken) && item.RefreshToken != "" {
 				expiring[item.AccessToken] = true
 			}
 		}
-		if item.RefreshToken != "" && item.Status != "禁用" && refreshKeepaliveDue(item, now) {
+		if item.RefreshToken != "" && item.Status != repository.StatusDisabled && refreshKeepaliveDue(item, now) {
 			keepalive = append(keepalive, item)
 		}
 	}
@@ -344,9 +344,9 @@ func (s *AccountService) remoteInfo(ctx context.Context, token string) (reposito
 	}
 	item.Quota, item.Remaining, item.ResetAfter = remaining, remaining, stringPointer(resetAfter)
 	if remaining == 0 {
-		item.Status = "限流"
+		item.Status = repository.StatusLimited
 	} else {
-		item.Status = "正常"
+		item.Status = repository.StatusActive
 	}
 	item.LastError = nil
 	return s.repo.UpdateAccount(ctx, email, map[string]any{"quota": item.Quota, "remaining": item.Remaining, "reset_after": item.ResetAfter, "status": item.Status, "last_error": nil})
@@ -394,7 +394,7 @@ func (s *AccountService) RemoveInvalid(ctx context.Context, token string) {
 		s.Delete(ctx, []string{token})
 		return
 	}
-	s.repo.UpdateAccount(ctx, tokenEmail(token), map[string]any{"status": "异常", "quota": 0})
+	s.repo.UpdateAccount(ctx, tokenEmail(token), map[string]any{"status": repository.StatusAbnormal, "quota": 0})
 }
 
 func invalidTokenError(err error) bool {
@@ -500,7 +500,7 @@ func mergeImportedAccount(current repository.Account, incoming repository.Accoun
 func applyTokenClaims(item *repository.Account) error {
 	parts := strings.Split(item.AccessToken, ".")
 	if len(parts) != 3 {
-		return errors.New("access_token 声明格式不正确")
+		return errors.New("access_token claims have an invalid format")
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
@@ -508,12 +508,12 @@ func applyTokenClaims(item *repository.Account) error {
 	}
 	var claims map[string]any
 	if json.Unmarshal(payload, &claims) != nil {
-		return errors.New("access_token 声明解析失败")
+		return errors.New("failed to parse access_token claims")
 	}
 	item.IsCodex = claims["client_id"] == codexClientID
 	auth, ok := claims["https://api.openai.com/auth"].(map[string]any)
 	if !ok {
-		return errors.New("access_token 缺少账号声明")
+		return errors.New("access_token is missing account claims")
 	}
 	plan, _ := auth["chatgpt_plan_type"].(string)
 	if plan == "" {
@@ -534,7 +534,7 @@ func applyTokenClaims(item *repository.Account) error {
 		}
 	}
 	if item.Email == nil {
-		return errors.New("access_token 缺少邮箱声明")
+		return errors.New("access_token is missing the email claim")
 	}
 	return nil
 }

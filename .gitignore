@@ -16,7 +16,7 @@ config.yaml
 # Git cache
 git_cache/
 
-# 调试/测试输出目录
+# Debug/test output directories
 loginwithpassword_*/
 logwithemailverifycode_*/
 test_batch_output/

@@ -1,12 +1,12 @@
 /*
- * Design Token：所有颜色、字号、间距、圆角、阴影都从这里取值，页面与组件不写裸值。
- * 第一层是原始色板（palette），第二层是语义 Token（surface / text / border / status），
- * 第三层把语义 Token 映射到 daisyUI 主题变量，让组件库与自定义样式共用同一套数值。
+ * Design Token: all colors, font sizes, spacing, border radius, and shadows are taken from here; pages and components never write raw values.
+ * The first layer is the raw palette, the second layer is semantic Tokens (surface / text / border / status),
+ * the third layer maps semantic Tokens to daisyUI theme variables so the component library and custom styles share the same set of values.
  */
 :root {
   color-scheme: light;
 
-  /* 原始色板：中性色取 zinc 色相，状态色只保留每类一个主色和一个浅底色 */
+  /* Raw palette: neutral colors use the zinc hue, status colors keep only one primary and one light background per category */
   --palette-white: #ffffff;
   --palette-gray-50: #f7f7f5;
   --palette-gray-100: #f1f1f3;
@@ -27,7 +27,7 @@
   --palette-blue-500: #2563eb;
   --palette-violet-500: #8b7cf6;
 
-  /* 语义色：页面只使用这一层 */
+  /* Semantic colors: pages use only this layer */
   --color-surface: var(--palette-white);
   --color-surface-muted: var(--palette-gray-50);
   --color-surface-chip: #f4f4f4;
@@ -51,14 +51,14 @@
   --color-overlay: rgb(24 24 27 / 40%);
   --color-scrim: rgb(9 9 11 / 88%);
 
-  /* 图表序列色：成功、失败、进行中与对比序列固定顺序 */
+  /* Chart series colors: fixed order for success, failure, in-progress, and comparison series */
   --chart-1: var(--palette-green-300);
   --chart-2: var(--palette-red-500);
   --chart-3: var(--palette-gray-300);
   --chart-4: var(--palette-violet-500);
   --chart-grid: var(--palette-gray-100);
 
-  /* 字体：正文 13px，后台信息密度优先 */
+  /* Font: body 13px, prioritizing admin information density */
   --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
   --text-xs: 12px;
@@ -73,7 +73,7 @@
   --weight-medium: 500;
   --weight-semibold: 600;
 
-  /* 间距：4 的倍数，按嵌套层级取用（控件内 1-2 / 组件内 3-4 / 区块间 6 / 页面边距 8） */
+  /* Spacing: multiples of 4, chosen by nesting level (inside controls 1-2 / inside components 3-4 / between sections 6 / page margins 8) */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -84,14 +84,14 @@
   --space-10: 40px;
   --space-12: 48px;
 
-  /* 控件高度：同为 4 的倍数，与 daisyUI xs / sm / md 对齐 */
+  /* Control heights: also multiples of 4, aligned with daisyUI xs / sm / md */
   --control-xs: 24px;
   --control-sm: 32px;
   --control-md: 40px;
 
   /*
-   * 圆角：等距内缩。子元素圆角 = 父元素圆角 - 内边距，
-   * 例如 16px 面板内留 8px 内边距的子块取 8px。支持连续圆角时整体放大以保持视觉等效。
+   * Border radius: equidistant inset. Child radius = parent radius - padding,
+   * e.g. a child block with 8px padding inside a 16px panel uses 8px. When continuous radius is supported, scale up overall to keep the visual equivalent.
    */
   --corner-scale: 1;
   --radius-xs: calc(4px * var(--corner-scale));
@@ -104,7 +104,7 @@
   --radius-panel: var(--radius-lg);
   --radius-dialog: var(--radius-xl);
 
-  /* 阴影：只给浮层使用，平面卡片不加阴影 */
+  /* Shadows: used only for overlays; flat cards get no shadow */
   --shadow-popover: 0 12px 32px -12px rgb(24 24 27 / 24%), 0 0 0 1px var(--color-border);
   --shadow-dialog: 0 24px 64px -24px rgb(24 24 27 / 32%);
 
@@ -115,7 +115,7 @@
   --layout-sidebar: 232px;
   --layout-content: 1200px;
 
-  /* daisyUI 主题映射 */
+  /* daisyUI theme mapping */
   --color-base-100: var(--color-surface);
   --color-base-200: var(--color-surface-muted);
   --color-base-300: var(--color-border);
@@ -143,7 +143,7 @@
   --noise: 0;
 }
 
-/* 连续圆角（超椭圆）：浏览器支持时启用，同时放大半径保持与普通圆角相同的视觉尺寸 */
+/* Continuous radius (squircle): enabled when the browser supports it, enlarging the radius to keep the same visual size as a regular radius */
 @supports (corner-shape: squircle) {
   :root {
     --corner-scale: 1.6;
@@ -154,7 +154,7 @@
   }
 }
 
-/* 基础排版：所有数值取自 tokens.css */
+/* Base typography: all values taken from tokens.css */
 *, *::before, *::after {
   box-sizing: border-box;
 }
@@ -199,7 +199,7 @@ a {
   scrollbar-color: var(--color-border-strong) transparent;
 }
 
-/* ---------- 图标 ---------- */
+/* ---------- Icons ---------- */
 ui-icon {
   display: inline-flex;
   flex: none;
@@ -237,7 +237,7 @@ ui-icon.icon-lg {
   }
 }
 
-/* ---------- 布局原语 ---------- */
+/* ---------- Layout primitives ---------- */
 .vstack {
   display: flex;
   flex-direction: column;
@@ -286,7 +286,7 @@ ui-icon.icon-lg {
   .grid-2, .grid-3, .grid-4 { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* ---------- 文本 ---------- */
+/* ---------- Text ---------- */
 .title-page {
   font-size: var(--text-xl);
   font-weight: var(--weight-semibold);
@@ -330,7 +330,7 @@ ui-icon.icon-lg {
   background: var(--color-surface-hover);
 }
 
-/* ---------- 应用外壳 ---------- */
+/* ---------- App shell ---------- */
 .app {
   height: 100%;
 }
@@ -459,7 +459,7 @@ ui-icon.icon-lg {
   }
 }
 
-/* 内容页：固定最大宽度并居中，页面边距 32px */
+/* Content page: fixed max width and centered, page margin 32px */
 .page {
   max-width: var(--layout-content);
   margin: 0 auto;
@@ -475,7 +475,7 @@ ui-icon.icon-lg {
   margin-bottom: var(--space-6);
 }
 
-/* 全高工作区（对话、生图）：不使用页面内边距，自己管理内部滚动区 */
+/* Full-height workspace (chat, image): no page padding, manages its own internal scroll area */
 .workspace {
   display: flex;
   height: 100%;
@@ -488,7 +488,7 @@ ui-icon.icon-lg {
   }
 }
 
-/* ---------- 面板 ---------- */
+/* ---------- Panels ---------- */
 .panel {
   min-width: 0;
   padding: var(--space-4);
@@ -496,7 +496,7 @@ ui-icon.icon-lg {
   background: var(--color-surface-muted);
 }
 
-/* 表格类主体区域：直接铺在页面上，不加底色与描边，行线区分内容 */
+/* Table-like body areas: laid directly on the page with no background or border, row lines separate content */
 .panel-flush {
   padding: 0;
   border-radius: 0;
@@ -517,14 +517,14 @@ ui-icon.icon-lg {
   margin: 0 0 var(--space-2);
 }
 
-/* 面板内的子块：面板 16px 圆角，子块内缩 8px 取 8px 圆角 */
+/* Child blocks inside a panel: panel has 16px radius, child inset by 8px uses 8px radius */
 .tile {
   padding: var(--space-3);
   border-radius: var(--radius-sm);
   background: var(--color-surface-muted);
 }
 
-/* ---------- 指标卡 ---------- */
+/* ---------- Metric cards ---------- */
 .metric-tile {
   display: flex;
   flex-direction: column;
@@ -555,7 +555,7 @@ ui-icon.icon-lg {
   font-size: var(--text-xs);
 }
 
-/* ---------- 表格 ---------- */
+/* ---------- Tables ---------- */
 .table-wrap {
   overflow-x: auto;
   overflow-y: hidden;
@@ -591,7 +591,7 @@ ui-icon.icon-lg {
   width: 1%;
 }
 
-/* ---------- 表单 ---------- */
+/* ---------- Forms ---------- */
 .field {
   display: flex;
   flex-direction: column;
@@ -618,7 +618,7 @@ ui-icon.icon-lg {
   font-size: var(--text-xs);
 }
 
-/* 设置项：一行一个，左侧名称与说明，右侧控件 */
+/* Setting rows: one per row, name and description on the left, control on the right */
 .setting-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
@@ -679,7 +679,7 @@ ui-icon.icon-lg {
   gap: var(--space-2);
 }
 
-/* ---------- 下拉选择 ---------- */
+/* ---------- Dropdown select ---------- */
 ui-select {
   display: inline-flex;
   min-width: 0;
@@ -694,7 +694,7 @@ ui-date {
   min-width: 0;
 }
 
-/* 日历浮层：周一开始，选中范围浅灰底，起止日期深色 */
+/* Calendar overlay: starts on Monday, selected range has a light gray background, start/end dates are dark */
 .date-panel {
   width: 272px;
   max-height: none;
@@ -864,7 +864,7 @@ ui-select > button:disabled, ui-date > button:disabled {
   visibility: visible;
 }
 
-/* ---------- 分页 ---------- */
+/* ---------- Pagination ---------- */
 ui-pager {
   display: flex;
   align-items: center;
@@ -876,7 +876,7 @@ ui-pager {
   font-size: var(--text-xs);
 }
 
-/* ---------- 空状态与加载 ---------- */
+/* ---------- Empty state and loading ---------- */
 .empty {
   display: flex;
   flex-direction: column;
@@ -899,7 +899,7 @@ ui-pager {
   min-height: 40vh;
 }
 
-/* ---------- 缩略图 ---------- */
+/* ---------- Thumbnails ---------- */
 .thumb {
   display: block;
   overflow: hidden;
@@ -917,7 +917,7 @@ ui-pager {
   object-fit: cover;
 }
 
-/* ---------- 键值列表 ---------- */
+/* ---------- Key-value list ---------- */
 .kv {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -933,7 +933,7 @@ ui-pager {
   word-break: break-all;
 }
 
-/* ---------- 代码块 ---------- */
+/* ---------- Code blocks ---------- */
 .code {
   margin: 0;
   overflow-x: auto;
@@ -948,7 +948,7 @@ ui-pager {
   word-break: break-all;
 }
 
-/* ---------- daisyUI 组件适配 ---------- */
+/* ---------- daisyUI component adaptations ---------- */
 .btn {
   font-weight: var(--weight-medium);
   gap: var(--space-1);
@@ -984,7 +984,7 @@ ui-pager {
   --btn-border: var(--color-text-subtle);
 }
 
-/* 控件一律使用淡色描边：聚焦只加深边框颜色，不叠加粗轮廓 */
+/* Controls always use a light border: focus only darkens the border color, no thick outline added */
 .input, .textarea, .select {
   --input-color: var(--color-border);
   box-shadow: none;
@@ -1057,7 +1057,7 @@ ui-pager {
   white-space: normal;
 }
 
-/* 弹窗不铺满屏幕：限制宽高，内容多时分 Tab，超出部分在弹窗内滚动 */
+/* Modals don't fill the screen: limit width and height, split into tabs when content is large, overflow scrolls inside the modal */
 .modal-box {
   max-width: 560px;
   max-height: min(720px, calc(100dvh - 160px));
@@ -1135,7 +1135,7 @@ ui-pager {
   height: 6px;
 }
 
-/* ---------- 图片查看器 ---------- */
+/* ---------- Image viewer ---------- */
 .lightbox {
   position: fixed;
   inset: 0;
@@ -1188,7 +1188,7 @@ ui-pager {
   font-size: var(--text-xs);
 }
 
-/* ---------- Markdown 正文 ---------- */
+/* ---------- Markdown body ---------- */
 .markdown > * + * {
   margin-top: var(--space-3);
 }
@@ -1228,7 +1228,7 @@ ui-pager {
   border: 1px solid var(--color-border);
 }
 
-/* ---------- 页面专用 ---------- */
+/* ---------- Page-specific ---------- */
 .login {
   display: flex;
   flex-direction: column;
@@ -1289,7 +1289,7 @@ ui-icon.login-logo {
   width: 240px;
 }
 
-/* ---------- 号池 ---------- */
+/* ---------- Account Pool ---------- */
 .option-card {
   display: flex;
   align-items: center;
@@ -1334,7 +1334,7 @@ ui-model {
   background: var(--color-surface-hover);
 }
 
-/* 创作台：左侧创作记录 + 右侧记录内容，输入框固定在底部 */
+/* Studio: creation records on the left + record content on the right, input box fixed at the bottom */
 .chat-page {
   position: relative;
 }
@@ -1463,7 +1463,7 @@ ui-model {
   padding: var(--space-8) var(--space-6);
 }
 
-/* ---------- 消息 ---------- */
+/* ---------- Messages ---------- */
 .chat-msg.user {
   display: flex;
   justify-content: flex-end;
@@ -1518,7 +1518,7 @@ ui-model {
   cursor: zoom-in;
 }
 
-/* ---------- 图片任务 ---------- */
+/* ---------- Image tasks ---------- */
 .chat-tasks {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -1600,7 +1600,7 @@ ui-model {
   justify-content: flex-end;
 }
 
-/* ---------- 文件与语音结果 ---------- */
+/* ---------- File and voice results ---------- */
 .chat-audio {
   width: 100%;
   max-width: 560px;
@@ -1610,7 +1610,7 @@ ui-model {
   max-width: 320px;
 }
 
-/* ---------- 输入区 ---------- */
+/* ---------- Input area ---------- */
 .chat-dock {
   display: flex;
   flex-direction: column;
@@ -1753,7 +1753,7 @@ ui-model {
   padding: var(--space-1) var(--space-2);
 }
 
-/* 图像设置浮层：在触发按钮上方展开 */
+/* Image settings overlay: expands above the trigger button */
 .chat-pop-wrap {
   position: relative;
 }
@@ -1815,7 +1815,7 @@ ui-model {
   border-radius: 3px;
 }
 
-/* 窄屏：对话记录收进左侧抽屉 */
+/* Narrow screen: chat records collapse into a left drawer */
 @media (max-width: 720px) {
   .chat-side {
     position: absolute;
@@ -1859,7 +1859,7 @@ ui-model {
   }
 }
 
-/* API 文档：左侧吸顶目录 + 右侧内容，整页只保留主内容区一层滚动 */
+/* API docs: sticky table of contents on the left + content on the right, the whole page keeps only one scroll layer in the main content area */
 .docs {
   display: grid;
   grid-template-columns: 200px minmax(0, 1fr);
@@ -1927,7 +1927,7 @@ button.nav-item {
   }
 }
 
-/* 图库：卡片网格与缩略图尺寸 */
+/* Gallery: card grid and thumbnail sizes */
 .gallery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -1995,7 +1995,7 @@ button.nav-item {
   width: 260px;
 }
 
-/* 日志：进度列、缩略图与详情弹窗 */
+/* Logs: progress column, thumbnails, and detail modal */
 
 .logs-range {
   width: 260px;
@@ -2042,7 +2042,7 @@ button.nav-item {
   display: block;
 }
 
-/* kv 行用 contents 让 dt / dd 直接参与 kv 网格 */
+/* kv rows use contents so dt / dd participate directly in the kv grid */
 .logs-overview {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2138,7 +2138,7 @@ button.nav-item {
   aspect-ratio: 1;
 }
 
-/* ---------- 设置 ---------- */
+/* ---------- Settings ---------- */
 .settings-layout {
   display: grid;
   grid-template-columns: 200px minmax(0, 1fr);
@@ -2162,7 +2162,7 @@ button.nav-item {
   margin: var(--space-2) 0;
 }
 
-/* 左侧导航 + 右侧内容的页面：整页固定高度，只滚动右侧内容 */
+/* Page with left navigation + right content: fixed full-page height, only the right content scrolls */
 @media (min-width: 1024px) {
   .page-split {
     display: flex;

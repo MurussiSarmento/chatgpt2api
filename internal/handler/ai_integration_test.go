@@ -39,7 +39,7 @@ func TestOpenAIHTTPIntegration(t *testing.T) {
 		t.Run("chat", func(t *testing.T) {
 			response := api.json(t, "/v1/chat/completions", map[string]any{
 				"model": "auto", "stream": stream, "stream_options": map[string]any{"include_usage": true},
-				"messages": []any{map[string]any{"role": "user", "content": "请简单介绍一下你自己。"}},
+				"messages": []any{map[string]any{"role": "user", "content": "Please briefly introduce yourself."}},
 			})
 			if !stream {
 				payload := decodeResponse(t, response)
@@ -68,7 +68,7 @@ func TestOpenAIHTTPIntegration(t *testing.T) {
 		t.Run("messages", func(t *testing.T) {
 			response := api.request(t, http.MethodPost, "/v1/messages", jsonBody(t, map[string]any{
 				"model": "auto", "stream": stream,
-				"messages": []any{map[string]any{"role": "user", "content": "你好，请简单介绍一下你自己。"}},
+				"messages": []any{map[string]any{"role": "user", "content": "Hello, please briefly introduce yourself."}},
 			}), map[string]string{"Content-Type": "application/json", "x-api-key": api.auth, "anthropic-version": "2023-06-01"})
 			if stream {
 				events := sseEvents(t, response)
@@ -86,7 +86,7 @@ func TestOpenAIHTTPIntegration(t *testing.T) {
 		t.Run("responses", func(t *testing.T) {
 			response := api.json(t, "/v1/responses", map[string]any{
 				"model": "auto", "stream": stream,
-				"input": []any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "input_text", "text": "你好，请简单介绍一下你自己。"}}}},
+				"input": []any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "input_text", "text": "Hello, please briefly introduce yourself."}}}},
 			})
 			if stream {
 				events := sseEvents(t, response)
@@ -108,7 +108,7 @@ func TestImageHTTPIntegration(t *testing.T) {
 	for _, stream := range []bool{false, true} {
 		t.Run("generation", func(t *testing.T) {
 			response := api.json(t, "/v1/images/generations", map[string]any{
-				"model": "gpt-image-2.6", "prompt": "我想做一张南京城市宣传海报图。", "n": 1,
+				"model": "gpt-image-2.6", "prompt": "I'd like to make a promotional poster image for the city of Nanjing.", "n": 1,
 				"response_format": "b64_json", "stream": stream,
 			})
 			if stream {
@@ -121,7 +121,7 @@ func TestImageHTTPIntegration(t *testing.T) {
 
 	t.Run("url", func(t *testing.T) {
 		payload := decodeResponse(t, api.json(t, "/v1/images/generations", map[string]any{
-			"model": "gpt-image-2.6", "prompt": "一只橘猫坐在窗边，午后阳光，写实摄影", "n": 1, "response_format": "url",
+			"model": "gpt-image-2.6", "prompt": "An orange cat sitting by the window, afternoon sunlight, realistic photography", "n": 1, "response_format": "url",
 		}))
 		data, _ := payload["data"].([]any)
 		if len(data) == 0 || data[0].(map[string]any)["url"] == "" {
@@ -137,7 +137,7 @@ func TestImageHTTPIntegration(t *testing.T) {
 		body := bytes.NewBuffer(nil)
 		writer := multipart.NewWriter(body)
 		writer.WriteField("model", "gpt-image-2.6")
-		writer.WriteField("prompt", "把图片改成海报")
+		writer.WriteField("prompt", "Turn the image into a poster")
 		writer.WriteField("response_format", "b64_json")
 		part, err := writer.CreateFormFile("image", "image.png")
 		if err != nil {
@@ -158,7 +158,7 @@ func TestImageHTTPIntegration(t *testing.T) {
 			t.Run("responses image", func(t *testing.T) {
 				response := api.json(t, "/v1/responses", map[string]any{
 					"model": model, "stream": stream,
-					"input": []any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "input_text", "text": "生成一张南京城市宣传海报图。"}}}},
+					"input": []any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "input_text", "text": "Generate a promotional poster image for the city of Nanjing."}}}},
 					"tools": []any{map[string]any{"type": "image_generation"}},
 				})
 				if stream {
@@ -175,7 +175,7 @@ func TestToolCallHTTPIntegration(t *testing.T) {
 	api := newIntegrationAPI(t)
 	parameters := map[string]any{"type": "object", "properties": map[string]any{"city": map[string]any{"type": "string"}}, "required": []string{"city"}}
 	add := map[string]any{"type": "object", "properties": map[string]any{"left": map[string]any{"type": "number"}, "right": map[string]any{"type": "number"}}, "required": []string{"left", "right"}}
-	prompt := "查询上海现在的天气，并计算 1+1。必须分别调用 get_weather 和 add 两个工具，不要直接回答。"
+	prompt := "Look up the current weather in Shanghai, and compute 1+1. You must call the two tools get_weather and add separately; do not answer directly."
 
 	t.Run("chat completions", func(t *testing.T) {
 		payload := decodeResponse(t, api.json(t, "/v1/chat/completions", map[string]any{
@@ -386,7 +386,7 @@ func assertToolNames(t *testing.T, value any, format string) {
 			}
 		}
 	}
-	if calls["get_weather"]["city"] != "上海" || calls["add"]["left"] != float64(1) || calls["add"]["right"] != float64(1) {
+	if calls["get_weather"]["city"] != "Shanghai" || calls["add"]["left"] != float64(1) || calls["add"]["right"] != float64(1) {
 		t.Fatalf("invalid tool calls: %#v", calls)
 	}
 }

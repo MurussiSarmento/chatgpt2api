@@ -30,7 +30,7 @@ func (h *ConversationHandler) RegisterRoutes(router *gin.RouterGroup) {
 func (h *ConversationHandler) list(c *gin.Context) {
 	conversationType := c.Query("type")
 	if conversationType != "" && !conversationTypes[conversationType] {
-		writeError(c, http.StatusUnprocessableEntity, errors.New("对话类型不正确"))
+		writeError(c, http.StatusUnprocessableEntity, errors.New("invalid conversation type"))
 		return
 	}
 	items, err := h.service.List(c.Request.Context(), identity(c).ID, conversationType)
@@ -48,11 +48,11 @@ func (h *ConversationHandler) list(c *gin.Context) {
 func (h *ConversationHandler) create(c *gin.Context) {
 	var body CreateConversationRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		writeError(c, http.StatusUnprocessableEntity, errors.New("对话内容格式不正确"))
+		writeError(c, http.StatusUnprocessableEntity, errors.New("invalid conversation content format"))
 		return
 	}
 	if body.Title == nil || body.Type == nil || body.Model == nil || !conversationTypes[*body.Type] {
-		writeError(c, http.StatusUnprocessableEntity, errors.New("对话内容格式不正确"))
+		writeError(c, http.StatusUnprocessableEntity, errors.New("invalid conversation content format"))
 		return
 	}
 	item, err := h.service.Create(c.Request.Context(), repository.Conversation{OwnerID: identity(c).ID, Title: *body.Title, Type: *body.Type, Model: *body.Model, Messages: body.Messages, Extra: body.Extra})
@@ -66,7 +66,7 @@ func (h *ConversationHandler) get(c *gin.Context) {
 	}
 	item, err := h.service.Get(c.Request.Context(), identity(c).ID, id)
 	if errors.Is(err, repository.ErrNotFound) {
-		writeError(c, http.StatusNotFound, errors.New("这条对话不存在"))
+		writeError(c, http.StatusNotFound, errors.New("this conversation does not exist"))
 		return
 	}
 	writeResult(c, toConversationResponse(item), err)
@@ -75,11 +75,11 @@ func (h *ConversationHandler) get(c *gin.Context) {
 func (h *ConversationHandler) update(c *gin.Context) {
 	var body UpdateConversationRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		writeError(c, http.StatusUnprocessableEntity, errors.New("对话内容格式不正确"))
+		writeError(c, http.StatusUnprocessableEntity, errors.New("invalid conversation content format"))
 		return
 	}
 	if body.Type != nil && !conversationTypes[*body.Type] {
-		writeError(c, http.StatusUnprocessableEntity, errors.New("对话类型不正确"))
+		writeError(c, http.StatusUnprocessableEntity, errors.New("invalid conversation type"))
 		return
 	}
 	id, ok := conversationID(c)
@@ -114,7 +114,7 @@ func (h *ConversationHandler) delete(c *gin.Context) {
 func (h *ConversationHandler) clear(c *gin.Context) {
 	conversationType := c.Query("type")
 	if conversationType != "" && !conversationTypes[conversationType] {
-		writeError(c, http.StatusUnprocessableEntity, errors.New("对话类型不正确"))
+		writeError(c, http.StatusUnprocessableEntity, errors.New("invalid conversation type"))
 		return
 	}
 	removed, err := h.service.Clear(c.Request.Context(), identity(c).ID, conversationType)
@@ -123,7 +123,7 @@ func (h *ConversationHandler) clear(c *gin.Context) {
 func conversationID(c *gin.Context) (int64, bool) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		writeError(c, http.StatusUnprocessableEntity, errors.New("对话编号格式不正确"))
+		writeError(c, http.StatusUnprocessableEntity, errors.New("invalid conversation ID format"))
 		return 0, false
 	}
 	return id, true

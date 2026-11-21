@@ -21,9 +21,9 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
-// ConvertThinkingEffort 保留上游支持的完整档位。不同套餐/模型开放的档位不同
-// （免费号常见 standard / extended，Pro/Codex 还可能支持 low / medium / high /
-// xhigh / max / ultra），这里只把别名归一化，其余非空值原样透传。
+// ConvertThinkingEffort keeps the full set of tiers supported upstream. Different plans/models expose different tiers
+// (free accounts commonly have standard / extended, while Pro/Codex may also support low / medium / high /
+// xhigh / max / ultra); here we only normalize aliases and pass any other non-empty value through as-is.
 func ConvertThinkingEffort(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	switch value {

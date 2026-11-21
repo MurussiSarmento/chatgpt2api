@@ -78,7 +78,7 @@ func (h *AIHandler) chat(c *gin.Context) {
 		includeUsage, _ = options["include_usage"].(bool)
 	}
 	requestData, _ := json.Marshal(messages)
-	callLog := h.logs.NewCallLog(identity(c), c.Request.URL.Path, model, "文本生成", string(requestData), time.Now())
+	callLog := h.logs.NewCallLog(identity(c), c.Request.URL.Path, model, "Text generation", string(requestData), time.Now())
 	if h.service.IsImageModel(model) || imageModalityRequested(body["modalities"]) {
 		id, created := service.NewID("chatcmpl-"), time.Now().Unix()
 		request := imageRequestFromMessages(messages, model, body, requestBaseURL(c))
@@ -473,9 +473,9 @@ func (h *AIHandler) images(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, err)
 		return
 	}
-	summary := "文生图"
+	summary := "Text-to-image"
 	if strings.HasSuffix(c.Request.URL.Path, "/edits") {
-		summary = "图生图"
+		summary = "Image edit"
 	}
 	callLog := h.logs.NewCallLog(identity(c), c.Request.URL.Path, request.Model, summary, request.Prompt, time.Now())
 	results, err := h.service.Images(c.Request.Context(), request, callLog)
@@ -785,7 +785,7 @@ func imageReferences(value any) []imageReference {
 	}
 	return nil
 }
-// 图片地址只允许访问公网，拨号时校验解析后的真实地址，重定向和域名解析到内网同样会被拒绝
+// Image URLs may only reach the public internet; the real resolved address is checked when dialing, and redirects or domains resolving to internal networks are likewise rejected
 var imageFetchClient = &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{DialContext: (&net.Dialer{Timeout: 10 * time.Second, Control: func(network string, address string, conn syscall.RawConn) error {
 	host, _, _ := net.SplitHostPort(address)
 	ip, _ := netip.ParseAddr(host)

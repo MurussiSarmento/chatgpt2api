@@ -21,7 +21,7 @@ func Static(root string) gin.HandlerFunc {
 			c.Status(http.StatusNotFound)
 			return
 		}
-		// 前端无构建、文件名不带哈希，要求浏览器每次按 Last-Modified 校验，发布后立即生效
+		// The frontend has no build step and filenames carry no hash, so require the browser to revalidate via Last-Modified every time; updates take effect immediately after release
 		c.Header("Cache-Control", "no-cache")
 		if info, err := os.Stat(requested); err == nil && !info.IsDir() {
 			c.File(requested)

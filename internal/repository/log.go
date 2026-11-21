@@ -58,7 +58,7 @@ func (r *Repository) UpdateLog(ctx context.Context, id string, summary string, d
 	return nil
 }
 
-// logColumns 把概览统计用的状态、模型、耗时从详情里取出来单独存列
+// logColumns extracts the status, model, and duration used by the overview statistics from the detail and stores them in separate columns
 func logColumns(detail map[string]any) (string, string, float64) {
 	status, _ := detail["status"].(string)
 	model, _ := detail["model"].(string)

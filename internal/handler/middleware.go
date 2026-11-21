@@ -27,7 +27,7 @@ func Identity(auth *service.AuthService) gin.HandlerFunc {
 func Admin(c *gin.Context) {
 	identity, exists := c.Get("identity")
 	if !exists || identity.(service.Identity).Role != "admin" {
-		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"detail": gin.H{"error": "需要管理员权限才能执行这个操作"}})
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"detail": gin.H{"error": "administrator privileges are required to perform this operation"}})
 		return
 	}
 	c.Next()

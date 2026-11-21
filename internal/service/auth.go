@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-var ErrUnauthorized = errors.New("密钥无效或已失效，请重新登录")
+var ErrUnauthorized = errors.New("the key is invalid or has expired; please log in again")
 
 type Identity struct {
 	ID    string
@@ -68,7 +68,7 @@ func (s *AuthService) Authenticate(ctx context.Context, authorization string, to
 		return Identity{}, ErrUnauthorized
 	}
 	if subtle.ConstantTimeCompare([]byte(key), []byte(s.adminKey)) == 1 {
-		return Identity{ID: "admin", Name: "管理员", Role: "admin", Routes: []string{"web"}}, nil
+		return Identity{ID: "admin", Name: "Administrator", Role: "admin", Routes: []string{"web"}}, nil
 	}
 	item, err := s.apiKey(ctx, key)
 	if errors.Is(err, repository.ErrNotFound) {
@@ -91,17 +91,17 @@ func (s *AuthService) List(ctx context.Context) ([]repository.APIKey, error) {
 
 func (s *AuthService) Create(ctx context.Context, name string, key string, plan []string, route []string) (repository.APIKey, error) {
 	if key == "" {
-		return repository.APIKey{}, errors.New("请输入新的专用密钥")
+		return repository.APIKey{}, errors.New("please enter a new dedicated key")
 	}
 	if key == s.adminKey {
-		return repository.APIKey{}, errors.New("这个密钥和管理员密钥冲突了，请换一个新的密钥")
+		return repository.APIKey{}, errors.New("this key conflicts with the administrator key; please choose a different key")
 	}
 	exists, err := s.repo.APIKeyExists(ctx, key, "")
 	if err != nil {
 		return repository.APIKey{}, err
 	}
 	if exists {
-		return repository.APIKey{}, errors.New("这个专用密钥已经存在，请换一个新的密钥")
+		return repository.APIKey{}, errors.New("this dedicated key already exists; please choose a different key")
 	}
 	name, err = s.availableName(ctx, name, "")
 	if err != nil {
@@ -127,14 +127,14 @@ func (s *AuthService) Update(ctx context.Context, id string, name *string, enabl
 	}
 	if key != nil {
 		if *key == "" || *key == s.adminKey {
-			return repository.APIKey{}, errors.New("请输入与管理员密钥不同的新密钥")
+			return repository.APIKey{}, errors.New("please enter a new key different from the administrator key")
 		}
 		exists, err := s.repo.APIKeyExists(ctx, *key, id)
 		if err != nil {
 			return repository.APIKey{}, err
 		}
 		if exists {
-			return repository.APIKey{}, errors.New("这个专用密钥已经存在，请换一个新的密钥")
+			return repository.APIKey{}, errors.New("this dedicated key already exists; please choose a different key")
 		}
 		item.Key = *key
 	}
@@ -172,16 +172,16 @@ func (s *AuthService) availableName(ctx context.Context, name string, excludeID 
 			return "", err
 		}
 		if exists {
-			return "", errors.New("这个名称已经在使用中了，换一个更容易区分的名称吧")
+			return "", errors.New("this name is already in use; please choose a more distinct name")
 		}
 		return name, nil
 	}
-	name = "普通用户"
+	name = "User"
 	for suffix := 2; ; suffix++ {
 		exists, err := s.repo.APIKeyNameExists(ctx, name, "user", excludeID)
 		if err != nil || !exists {
 			return name, err
 		}
-		name = "普通用户 " + strconv.Itoa(suffix)
+		name = "User " + strconv.Itoa(suffix)
 	}
 }

@@ -30,7 +30,7 @@ func (h *OAuthHandler) start(c *gin.Context) {
 func (h *OAuthHandler) finish(c *gin.Context) {
 	var body OAuthFinishRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		writeError(c, http.StatusBadRequest, errors.New("授权信息不完整"))
+		writeError(c, http.StatusBadRequest, errors.New("authorization information is incomplete"))
 		return
 	}
 	tokens, err := h.oauth.Finish(c.Request.Context(), body.SessionID, body.Callback)

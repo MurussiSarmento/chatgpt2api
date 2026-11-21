@@ -47,7 +47,7 @@ func (h *AccountHandler) summary(c *gin.Context) {
 func (h *AccountHandler) add(c *gin.Context) {
 	var body []AccountRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		writeError(c, http.StatusBadRequest, errors.New("账号数据格式不正确"))
+		writeError(c, http.StatusBadRequest, errors.New("invalid account data format"))
 		return
 	}
 	items := make([]repository.Account, 0, len(body))
@@ -61,7 +61,7 @@ func (h *AccountHandler) add(c *gin.Context) {
 func (h *AccountHandler) delete(c *gin.Context) {
 	var body DeleteAccountsRequest
 	if err := c.ShouldBindJSON(&body); err != nil || len(body.Tokens) == 0 {
-		writeError(c, http.StatusBadRequest, errors.New("请选择要删除的账号"))
+		writeError(c, http.StatusBadRequest, errors.New("please select the account(s) to delete"))
 		return
 	}
 	removed, err := h.service.Delete(c.Request.Context(), body.Tokens)
@@ -71,7 +71,7 @@ func (h *AccountHandler) delete(c *gin.Context) {
 func (h *AccountHandler) update(c *gin.Context) {
 	var body UpdateAccountRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		writeError(c, http.StatusBadRequest, errors.New("请选择要修改的账号"))
+		writeError(c, http.StatusBadRequest, errors.New("please select the account(s) to modify"))
 		return
 	}
 	values := map[string]any{}
@@ -88,12 +88,12 @@ func (h *AccountHandler) update(c *gin.Context) {
 		values["proxy"] = *body.Proxy
 	}
 	if len(values) == 0 {
-		writeError(c, http.StatusBadRequest, errors.New("还没有检测到改动，请修改后再保存"))
+		writeError(c, http.StatusBadRequest, errors.New("no changes detected yet; please make changes before saving"))
 		return
 	}
 	item, err := h.service.Update(c.Request.Context(), body.AccessToken, values)
 	if errors.Is(err, repository.ErrNotFound) {
-		writeError(c, http.StatusNotFound, errors.New("账号不存在"))
+		writeError(c, http.StatusNotFound, errors.New("account does not exist"))
 		return
 	}
 	if err != nil {
@@ -111,12 +111,12 @@ func (h *AccountHandler) update(c *gin.Context) {
 func (h *AccountHandler) refreshQuota(c *gin.Context) {
 	var body AccountQuotaRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		writeError(c, http.StatusBadRequest, errors.New("请选择要查询额度的账号"))
+		writeError(c, http.StatusBadRequest, errors.New("please select the account(s) to check quota for"))
 		return
 	}
 	item, err := h.service.RefreshQuota(c.Request.Context(), body.AccessToken)
 	if errors.Is(err, repository.ErrNotFound) {
-		writeError(c, http.StatusNotFound, errors.New("账号不存在"))
+		writeError(c, http.StatusNotFound, errors.New("account does not exist"))
 		return
 	}
 	if err != nil {

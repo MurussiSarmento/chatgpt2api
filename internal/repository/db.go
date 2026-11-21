@@ -38,10 +38,10 @@ func Open(databaseURL string) (*Repository, error) {
 				return nil, err
 			}
 		}
-		// 连接级 PRAGMA 必须写进连接串，保证连接池里每个连接都生效
+		// Connection-level PRAGMAs must be written into the connection string so every connection in the pool takes effect
 		dialector = sqlite.Open(path + "?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)")
 	default:
-		return nil, fmt.Errorf("不支持的数据库地址: %s", databaseURL)
+		return nil, fmt.Errorf("unsupported database address: %s", databaseURL)
 	}
 	db, err := gorm.Open(dialector)
 	if err != nil {

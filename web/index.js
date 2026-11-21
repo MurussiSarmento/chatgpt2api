@@ -2,7 +2,7 @@ import Alpine from "alpinejs";
 import dayjs from "dayjs";
 import { EventSourceParserStream } from "eventsource-parser/stream";
 
-/* ---------- 请求与登录态 ---------- */
+/* ---------- Requests and login state ---------- */
 const SESSION_KEY = "chatgpt2api_session";
 
 const session = {
@@ -32,20 +32,20 @@ async function send(path, { method = "GET", body, headers = {}, key = session.ge
   }
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(errorText(payload.detail) || errorText(payload.error) || payload.message || `请求失败（${response.status}）`);
+    throw new Error(errorText(payload.detail) || errorText(payload.error) || payload.message || `Request failed (${response.status})`);
   }
   return response;
 }
 
-/** 发送请求并解析 JSON 响应；options 支持 method / body / headers / key / signal。 */
+/** Send a request and parse the JSON response; options supports method / body / headers / key / signal. */
 async function api(path, options) {
   return (await send(path, options)).json();
 }
 
-/** 获取二进制响应，用于音频与压缩包下载。 */
+/** Get a binary response, used for audio and archive downloads. */
 api.blob = async (path, options) => (await send(path, options)).blob();
 
-/** 以 SSE 方式读取流式响应，逐条回调解析后的事件。 */
+/** Read a streaming response via SSE, calling back each parsed event one by one. */
 api.stream = async (path, body, onEvent) => {
   const response = await send(path, { method: "POST", body });
   const reader = response.body.pipeThrough(new TextDecoderStream()).pipeThrough(new EventSourceParserStream()).getReader();
@@ -58,8 +58,8 @@ api.stream = async (path, body, onEvent) => {
   }
 };
 
-/* ---------- 通用函数与组件 ---------- */
-/* ---------- 格式化 ---------- */
+/* ---------- Shared functions and components ---------- */
+/* ---------- Formatting ---------- */
 const fmtTime = (value) => value ? dayjs(value).format("YYYY-MM-DD HH:mm:ss") : "—";
 const fmtShort = (value) => value ? dayjs(value).format("MM-DD HH:mm") : "—";
 const fmtNumber = (value) => new Intl.NumberFormat("zh-CN").format(value);
@@ -76,7 +76,7 @@ function fmtDuration(ms) {
   return `${Math.floor(ms / 60000)}m ${Math.floor(ms % 60000 / 1000)}s`;
 }
 
-/* ---------- 文件与下载 ---------- */
+/* ---------- Files and downloads ---------- */
 const readDataUrl = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = () => resolve(reader.result);
@@ -98,8 +98,8 @@ function saveBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
-/* ---------- 反馈 ---------- */
-/** 只在失败、需要等待或需要用户处理时调用，成功状态由界面变化体现。 */
+/* ---------- Feedback ---------- */
+/** Called only on failure, when waiting is needed, or when the user must act; success is reflected by UI changes. */
 function toast(text, type = "error", icon = "") {
   const store = Alpine.store("toast");
   const item = { id: crypto.randomUUID(), text, type, icon };
@@ -107,24 +107,24 @@ function toast(text, type = "error", icon = "") {
   setTimeout(() => store.items.splice(store.items.indexOf(item), 1), type === "error" ? 6000 : 4000);
 }
 
-/** 确认弹窗，返回用户是否确认。 */
-function confirmDialog({ title, text = "", ok = "确认", danger = true }) {
+/** Confirmation dialog, returns whether the user confirmed. */
+function confirmDialog({ title, text = "", ok = "Confirm", danger = true }) {
   return new Promise((resolve) => Object.assign(Alpine.store("confirm"), { open: true, title, text, ok, danger, resolve }));
 }
 
-/** 打开全屏图片查看器，images 为 { src, meta } 数组。 */
+/** Open the full-screen image viewer; images is an array of { src, meta }. */
 function lightbox(images, index) {
   Object.assign(Alpine.store("lightbox"), { images, index, zoom: false, open: true });
 }
 
-/** 复制文本，并让触发元素短暂高亮作为反馈。 */
+/** Copy text and briefly highlight the trigger element as feedback. */
 async function copyText(text, el) {
   await navigator.clipboard.writeText(text);
   el.animate([{ background: "var(--color-success-soft)" }, { background: "transparent" }], { duration: 800 });
 }
 
 let markdownLib;
-/** Markdown 渲染：按需加载 marked 与 DOMPurify。 */
+/** Markdown rendering: lazily load marked and DOMPurify. */
 async function markdown(text) {
   markdownLib ??= Promise.all([import("marked"), import("dompurify")]);
   const [{ marked }, { default: purify }] = await markdownLib;
@@ -139,27 +139,27 @@ customElements.define("ui-icon", class extends HTMLElement {
   }
 });
 
-/** 把浮层定位到触发按钮下方，空间不足时改为上方。 */
+/** Position the overlay below the trigger button, switching above when there isn't enough space. */
 function anchor(button, panel, height) {
   const rect = button.getBoundingClientRect();
   const above = rect.bottom + height > innerHeight && rect.top > height;
   Object.assign(panel.style, { minWidth: `${rect.width}px`, left: `${Math.min(rect.left, innerWidth - panel.offsetWidth - 8)}px`, top: above ? "auto" : `${rect.bottom + 4}px`, bottom: above ? `${innerHeight - rect.top + 4}px` : "auto" });
 }
 
-/** 模型标签：显示 GPT 图标与模型名称，点击复制。 */
+/** Model chip: shows the GPT icon and model name, click to copy. */
 customElements.define("ui-model", class extends HTMLElement {
   static observedAttributes = ["name"];
   attributeChangedCallback() {
     const name = this.getAttribute("name");
-    this.innerHTML = `<button type="button" class="model-chip" title="点击复制"><ui-icon name="openai" class="icon-sm"></ui-icon><span class="truncate"></span></button>`;
+    this.innerHTML = `<button type="button" class="model-chip" title="Click to copy"><ui-icon name="openai" class="icon-sm"></ui-icon><span class="truncate"></span></button>`;
     this.querySelector("span").textContent = name;
-    this.firstChild.onclick = () => navigator.clipboard.writeText(name).then(() => toast(`已复制 ${name}`, "success", "openai"), (error) => toast(error.message));
+    this.firstChild.onclick = () => navigator.clipboard.writeText(name).then(() => toast(`Copied ${name}`, "success", "openai"), (error) => toast(error.message));
   }
 });
 
 /**
- * 下拉选择：替代浏览器原生选择面板。用法 <ui-select x-model="value"><option value="a">A</option></ui-select>，
- * 选项可由 x-for 生成；支持 placeholder、disabled、variant="ghost"、block 类，以及 multiple（值为数组，可多选）。
+ * Dropdown select: replaces the browser's native select panel. Usage <ui-select x-model="value"><option value="a">A</option></ui-select>,
+ * options can be generated by x-for; supports placeholder, disabled, variant="ghost", the block class, and multiple (value is an array, allows multi-select).
  */
 customElements.define("ui-select", class extends HTMLElement {
   static observedAttributes = ["disabled", "placeholder"];
@@ -240,8 +240,8 @@ customElements.define("ui-select", class extends HTMLElement {
 });
 
 /**
- * 分页：<ui-pager :page="page" :size="size" :total="total" @change="...">，
- * 居中显示总条数、当前页 / 总页数与每页数量，change 事件 detail 为 { page, size }。
+ * Pagination: <ui-pager :page="page" :size="size" :total="total" @change="...">,
+ * centered display of the total count, current page / total pages, and page size; the change event detail is { page, size }.
  */
 customElements.define("ui-pager", class extends HTMLElement {
   static observedAttributes = ["page", "size", "total", "sizes"];
@@ -253,11 +253,11 @@ customElements.define("ui-pager", class extends HTMLElement {
     const pages = Math.max(1, Math.ceil(total / size));
     const sizes = (this.getAttribute("sizes") || "10,20,50,100").split(",");
     this.innerHTML = `
-      <span>共 ${fmtNumber(total)} 条</span>
-      <button type="button" class="btn btn-ghost btn-xs btn-square" data-page="${page - 1}" ${page <= 1 ? "disabled" : ""} aria-label="上一页"><ui-icon name="chevron-left" class="icon-sm"></ui-icon></button>
+      <span>${fmtNumber(total)} total</span>
+      <button type="button" class="btn btn-ghost btn-xs btn-square" data-page="${page - 1}" ${page <= 1 ? "disabled" : ""} aria-label="Previous page"><ui-icon name="chevron-left" class="icon-sm"></ui-icon></button>
       <span class="num">${page} / ${pages}</span>
-      <button type="button" class="btn btn-ghost btn-xs btn-square" data-page="${page + 1}" ${page >= pages ? "disabled" : ""} aria-label="下一页"><ui-icon name="chevron-right" class="icon-sm"></ui-icon></button>
-      <ui-select variant="ghost">${sizes.map((item) => `<option value="${item}">${item} 条/页</option>`).join("")}</ui-select>`;
+      <button type="button" class="btn btn-ghost btn-xs btn-square" data-page="${page + 1}" ${page >= pages ? "disabled" : ""} aria-label="Next page"><ui-icon name="chevron-right" class="icon-sm"></ui-icon></button>
+      <ui-select variant="ghost">${sizes.map((item) => `<option value="${item}">${item} / page</option>`).join("")}</ui-select>`;
     const select = this.querySelector("ui-select");
     select.value = String(size);
     select.addEventListener("change", (event) => {
@@ -273,7 +273,7 @@ customElements.define("ui-pager", class extends HTMLElement {
 });
 
 /**
- * 日期选择：原生实现的日历浮层，周一开始。mode="range" 时 x-model 值为 [开始, 结束]，否则为单个日期（YYYY-MM-DD）；未选择时为空。
+ * Date picker: a natively implemented calendar overlay starting on Monday. When mode="range", the x-model value is [start, end]; otherwise a single date (YYYY-MM-DD); empty when nothing is selected.
  */
 customElements.define("ui-date", class extends HTMLElement {
   #value = "";
@@ -331,8 +331,8 @@ customElements.define("ui-date", class extends HTMLElement {
   }
 
   render() {
-    const text = [this.#value].flat().join(" 至 ");
-    this.button.innerHTML = `<ui-icon name="calendar-days" class="icon-sm text-subtle"></ui-icon><span class="grow truncate${text ? "" : " text-subtle"}">${text || this.getAttribute("placeholder")}</span>${text ? `<span class="date-clear" data-clear role="button" aria-label="清除日期"><ui-icon name="x" class="icon-sm"></ui-icon></span>` : ""}`;
+    const text = [this.#value].flat().join(" to ");
+    this.button.innerHTML = `<ui-icon name="calendar-days" class="icon-sm text-subtle"></ui-icon><span class="grow truncate${text ? "" : " text-subtle"}">${text || this.getAttribute("placeholder")}</span>${text ? `<span class="date-clear" data-clear role="button" aria-label="Clear date"><ui-icon name="x" class="icon-sm"></ui-icon></span>` : ""}`;
   }
 
   renderPanel() {
@@ -347,17 +347,17 @@ customElements.define("ui-date", class extends HTMLElement {
     });
     this.panel.innerHTML = `
       <div class="date-head">
-        <button type="button" class="btn btn-ghost btn-xs btn-square" data-step="-1" aria-label="上个月"><ui-icon name="chevron-left" class="icon-sm"></ui-icon></button>
-        <span class="num">${this.month.format("YYYY 年 M 月")}</span>
-        <button type="button" class="btn btn-ghost btn-xs btn-square" data-step="1" aria-label="下个月"><ui-icon name="chevron-right" class="icon-sm"></ui-icon></button>
+        <button type="button" class="btn btn-ghost btn-xs btn-square" data-step="-1" aria-label="Previous month"><ui-icon name="chevron-left" class="icon-sm"></ui-icon></button>
+        <span class="num">${this.month.format("MMMM YYYY")}</span>
+        <button type="button" class="btn btn-ghost btn-xs btn-square" data-step="1" aria-label="Next month"><ui-icon name="chevron-right" class="icon-sm"></ui-icon></button>
       </div>
-      <div class="date-grid">${["一", "二", "三", "四", "五", "六", "日"].map((name) => `<span class="date-week">${name}</span>`).join("")}${days.join("")}</div>`;
+      <div class="date-grid">${["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((name) => `<span class="date-week">${name}</span>`).join("")}${days.join("")}</div>`;
   }
 });
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/* ---------- 页面：login ---------- */
+/* ---------- Page: login ---------- */
 Alpine.data("login", () => ({
   key: "",
   visible: false,
@@ -378,7 +378,7 @@ Alpine.data("login", () => ({
   },
 }));
 
-/* ---------- 页面：overview ---------- */
+/* ---------- Page: overview ---------- */
 Alpine.data("overview", () => {
   let chart;
   const timers = {};
@@ -439,10 +439,10 @@ Alpine.data("overview", () => {
     get metrics() {
       const { summary } = this.calls;
       return [
-        { label: "调用量", icon: "activity", value: fmtNumber(summary.total), meta: `成功 ${fmtNumber(summary.success)} · 失败 ${fmtNumber(summary.failed)}` },
-        { label: "成功率", icon: "circle-check", value: this.rate(summary.success_rate), meta: `已完成 ${fmtNumber(summary.success + summary.failed)}` },
-        { label: "进行中", icon: "loader-circle", value: fmtNumber(summary.running), meta: "尚未完成的调用" },
-        { label: "平均耗时", icon: "clock-3", value: summary.average_duration_ms === null ? "—" : `${(summary.average_duration_ms / 1000).toFixed(1)} s`, meta: "已完成调用" },
+        { label: "Calls", icon: "activity", value: fmtNumber(summary.total), meta: `Success ${fmtNumber(summary.success)} · Failed ${fmtNumber(summary.failed)}` },
+        { label: "Success rate", icon: "circle-check", value: this.rate(summary.success_rate), meta: `Completed ${fmtNumber(summary.success + summary.failed)}` },
+        { label: "In progress", icon: "loader-circle", value: fmtNumber(summary.running), meta: "Calls not yet completed" },
+        { label: "Average duration", icon: "clock-3", value: summary.average_duration_ms === null ? "—" : `${(summary.average_duration_ms / 1000).toFixed(1)} s`, meta: "Completed calls" },
       ];
     },
 
@@ -453,8 +453,8 @@ Alpine.data("overview", () => {
     get resources() {
       const { memory, disk } = this.system ?? {};
       return [
-        { label: "本进程内存", icon: "memory-stick", tip: memory ? `本服务进程占用内存占系统总内存的比例；系统可用 ${fmtBytes(memory.available)}` : "本服务进程占用内存占系统总内存的比例", percent: memory?.process_percent, meta: memory ? `${fmtBytes(memory.process)} · 系统整体 ${memory.percent.toFixed(1)}%（${fmtBytes(memory.used)} / ${fmtBytes(memory.total)}）` : "—" },
-        { label: "磁盘", icon: "hard-drive", tip: disk ? `运行目录所在磁盘：${disk.path}` : "运行目录所在磁盘", percent: disk?.percent, meta: disk ? `${fmtBytes(disk.used)} / ${fmtBytes(disk.total)} · 剩余 ${fmtBytes(disk.free)}` : "—" },
+        { label: "Process memory", icon: "memory-stick", tip: memory ? `Share of total system memory used by this service process; system available ${fmtBytes(memory.available)}` : "Share of total system memory used by this service process", percent: memory?.process_percent, meta: memory ? `${fmtBytes(memory.process)} · system total ${memory.percent.toFixed(1)}% (${fmtBytes(memory.used)} / ${fmtBytes(memory.total)})` : "—" },
+        { label: "Disk", icon: "hard-drive", tip: disk ? `Disk where the run directory resides: ${disk.path}` : "Disk where the run directory resides", percent: disk?.percent, meta: disk ? `${fmtBytes(disk.used)} / ${fmtBytes(disk.total)} · free ${fmtBytes(disk.free)}` : "—" },
       ];
     },
 
@@ -464,7 +464,7 @@ Alpine.data("overview", () => {
       const style = getComputedStyle(document.documentElement);
       const token = (name) => style.getPropertyValue(name).trim();
       const labels = this.calls.trend.map((item) => dayjs(item.time).format(this.period === "24h" ? "HH:mm" : "MM-DD HH:mm"));
-      const datasets = [["success", "成功", "--chart-1"], ["failed", "失败", "--chart-2"], ["running", "进行中", "--chart-3"]].map(([key, label, color]) => ({
+      const datasets = [["success", "Success", "--chart-1"], ["failed", "Failed", "--chart-2"], ["running", "In progress", "--chart-3"]].map(([key, label, color]) => ({
         label,
         data: this.calls.trend.map((item) => item[key]),
         backgroundColor: token(color),
@@ -498,8 +498,8 @@ Alpine.data("overview", () => {
   };
 });
 
-/* ---------- 页面：chat ---------- */
-const progressLabels = { getting_account: "确认可用账号", uploading: "上传图片", bootstrapping: "预热首页", getting_token: "获取凭证", preparing_conversation: "准备会话", starting_generation: "启动生成", generating: "生成中", receiving_image: "接收图片" };
+/* ---------- Page: chat ---------- */
+const progressLabels = { getting_account: "Confirming available account", uploading: "Uploading image", bootstrapping: "Warming up home page", getting_token: "Getting token", preparing_conversation: "Preparing conversation", starting_generation: "Starting generation", generating: "Generating", receiving_image: "Receiving image" };
 const ratios = [["1:1", 1024, 1024, "square"], ["2:3", 1024, 1536, "rectangle-vertical"], ["3:2", 1536, 1024, "rectangle-horizontal"], ["3:4", 1024, 1365, "rectangle-vertical"], ["4:3", 1365, 1024, "rectangle-horizontal"], ["9:16", 1088, 1920, "rectangle-vertical"], ["16:9", 1920, 1088, "rectangle-horizontal"], ["auto", 1024, 1024, "image"]];
 const running = (part) => part.status === "queued" || part.status === "running";
 const imagePart = (task, index, total, ratio) => ({ type: "image_task", task_id: String(task.id), index, total, ratio, status: task.status, progress: task.progress, elapsed_seconds: task.elapsed_seconds, duration_ms: task.duration_ms, url: task.results[0]?.url, error: task.error });
@@ -507,11 +507,11 @@ const userContent = (text, images) => images.length ? [...(text ? [{ type: "text
 const sizeOf = (settings) => settings.ratio === "auto" ? "auto" : ratios.find(([value]) => value === settings.ratio).slice(1, 3).join("x");
 const fromUrl = async (url, name) => ({ id: crypto.randomUUID(), name, url, file: await urlToFile(url, name) });
 
-/** 创作模式：每个模式对应的记录类型，第一个为默认类型。 */
+/** Creation modes: the record type each mode maps to, the first is the default type. */
 const creationModes = [
-  { value: "chat", label: "聊天", icon: "message-circle", types: ["chat"] },
-  { value: "image", label: "生图", icon: "image", types: ["image"] },
-  { value: "voice", label: "语音", icon: "audio-lines", types: ["speech", "transcription"] },
+  { value: "chat", label: "Chat", icon: "message-circle", types: ["chat"] },
+  { value: "image", label: "Image", icon: "image", types: ["image"] },
+  { value: "voice", label: "Voice", icon: "audio-lines", types: ["speech", "transcription"] },
 ];
 const recordIcons = { chat: "message-circle", image: "image", speech: "audio-lines", transcription: "mic" };
 
@@ -522,17 +522,17 @@ Alpine.data("chat", () => {
   return {
     modes: creationModes,
     recordIcons,
-    efforts: [["", "默认思考"], ["low", "低思考"], ["medium", "中思考"], ["high", "高思考"], ["xhigh", "超高思考"]],
+    efforts: [["", "Default thinking"], ["low", "Low thinking"], ["medium", "Medium thinking"], ["high", "High thinking"], ["xhigh", "Extra-high thinking"]],
     voices: [
-      ["juniper", "Juniper · 开朗轻快"],
-      ["maple", "Maple · 欢快直率"],
-      ["cove", "Cove · 沉稳直接"],
-      ["breeze", "Breeze · 生动真诚"],
-      ["orbit", "Spruce · 平静笃定"],
-      ["glimmer", "Sol · 机敏松弛"],
-      ["ember", "Ember · 自信乐观"],
-      ["fathom", "Arbor · 随和百搭"],
-      ["vale", "Vale · 明亮好奇"],
+      ["juniper", "Juniper · Cheerful and light"],
+      ["maple", "Maple · Upbeat and frank"],
+      ["cove", "Cove · Steady and direct"],
+      ["breeze", "Breeze · Vivid and sincere"],
+      ["orbit", "Spruce · Calm and assured"],
+      ["glimmer", "Sol · Sharp and relaxed"],
+      ["ember", "Ember · Confident and optimistic"],
+      ["fathom", "Arbor · Easygoing and versatile"],
+      ["vale", "Vale · Bright and curious"],
     ],
     formats: [["mp3", "MP3"], ["opus", "Opus"], ["aac", "AAC"], ["flac", "FLAC"], ["wav", "WAV"]],
     ratios,
@@ -605,11 +605,11 @@ Alpine.data("chat", () => {
     },
 
     get placeholder() {
-      return { chat: this.webSearch ? "搜索网络并提问" : "输入问题", image: this.images.length ? "描述如何修改参考图" : "描述想要生成的画面", speech: "输入要合成的文本" }[this.type];
+      return { chat: this.webSearch ? "Search the web and ask" : "Enter a question", image: this.images.length ? "Describe how to edit the reference image" : "Describe the image you want to generate", speech: "Enter the text to synthesize" }[this.type];
     },
 
     get settingsLabel() {
-      return `${this.settings.ratio} · ${this.settings.count} 张`;
+      return `${this.settings.ratio} · ${this.settings.count} images`;
     },
 
     setMode(mode) {
@@ -644,7 +644,7 @@ Alpine.data("chat", () => {
     },
 
     async remove(item) {
-      if (!await confirmDialog({ title: "删除记录", text: `确定删除「${item.title}」吗？`, ok: "删除" })) return;
+      if (!await confirmDialog({ title: "Delete record", text: `Delete "${item.title}"?`, ok: "Delete" })) return;
       try {
         await api(`/api/conversations/${item.id}`, { method: "DELETE" });
         this.list = this.list.filter((entry) => entry.id !== item.id);
@@ -655,7 +655,7 @@ Alpine.data("chat", () => {
     },
 
     async clearAll() {
-      if (!await confirmDialog({ title: "清空记录", text: "删除全部创作记录，此操作无法撤销。", ok: "全部删除" })) return;
+      if (!await confirmDialog({ title: "Clear records", text: "Delete all creation records. This cannot be undone.", ok: "Delete all" })) return;
       try {
         await api("/api/conversations", { method: "DELETE" });
         this.list = [];
@@ -666,13 +666,13 @@ Alpine.data("chat", () => {
       }
     },
 
-    /** 更新本地记录并同步保存。 */
+    /** Update the local record and save it in sync. */
     async save(id, changes) {
       Object.assign(this.loaded[id], changes);
       await api(`/api/conversations/${id}`, { method: "PATCH", body: changes });
     },
 
-    /** 有当前记录就一直追加一轮，只有用户点「新建」后（无当前记录）的第一次提交才创建记录；turn 只含本轮用户消息，不带上下文。 */
+    /** With a current record, keep appending a turn; a record is only created on the first submit after the user clicks "New" (no current record); turn contains only this round's user message, without context. */
     async begin(type, model, title, content, extra) {
       const turn = [{ role: "user", content }];
       if (this.active) {
@@ -691,8 +691,8 @@ Alpine.data("chat", () => {
       this.error = "";
       try {
         const images = await Promise.all([...files].map(async (file) => {
-          if (!file.type.startsWith("image/")) throw new Error(`${file.name} 不是图片文件`);
-          if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name} 超过 10MB`);
+          if (!file.type.startsWith("image/")) throw new Error(`${file.name} is not an image file`);
+          if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name} exceeds 10MB`);
           return { id: crypto.randomUUID(), name: file.name, url: await readDataUrl(file), file };
         }));
         this.images.push(...images);
@@ -722,7 +722,7 @@ Alpine.data("chat", () => {
       this.error = "";
       let id, base, turn, output = "";
       try {
-        ({ id, messages: base, turn } = await this.begin("chat", this.model, this.input || "图片提问", userContent(this.input, this.images), extra));
+        ({ id, messages: base, turn } = await this.begin("chat", this.model, this.input || "Image question", userContent(this.input, this.images), extra));
         this.input = "";
         this.images = [];
         await api.stream("/v1/responses", { ...body, input: turn }, (event) => {
@@ -751,7 +751,7 @@ Alpine.data("chat", () => {
         await this.save(id, { messages: [...base, { role: "assistant", content: [{ type: "audio", url: await readDataUrl(blob), format }] }] });
       } catch (error) {
         this.error = error.message;
-        if (id) await this.save(id, { messages: [...base, { role: "assistant", content: `合成失败：${error.message}` }] });
+        if (id) await this.save(id, { messages: [...base, { role: "assistant", content: `Synthesis failed: ${error.message}` }] });
       } finally {
         this.loading = false;
       }
@@ -772,7 +772,7 @@ Alpine.data("chat", () => {
         await this.save(id, { messages: [...base, { role: "assistant", content: text }] });
       } catch (error) {
         this.error = error.message;
-        if (id) await this.save(id, { messages: [...base, { role: "assistant", content: `转写失败：${error.message}` }] });
+        if (id) await this.save(id, { messages: [...base, { role: "assistant", content: `Transcription failed: ${error.message}` }] });
       } finally {
         this.loading = false;
       }
@@ -794,7 +794,7 @@ Alpine.data("chat", () => {
         recorder.onstop = () => {
           stream.getTracks().forEach((track) => track.stop());
           const blob = new Blob(chunks, { type: recorder.mimeType });
-          this.audio = new File([blob], `录音-${dayjs().format("MMDD-HHmmss")}.webm`, { type: blob.type });
+          this.audio = new File([blob], `recording-${dayjs().format("MMDD-HHmmss")}.webm`, { type: blob.type });
           this.recording = false;
         };
         recorder.start();
@@ -840,13 +840,13 @@ Alpine.data("chat", () => {
         await this.poll(id);
       } catch (error) {
         this.error = error.message;
-        if (id) await this.save(id, { messages: [...base, assistant(parts.length ? parts.map((part) => running(part) ? { ...part, status: "error", error: error.message } : part) : `生成失败：${error.message}`)] });
+        if (id) await this.save(id, { messages: [...base, assistant(parts.length ? parts.map((part) => running(part) ? { ...part, status: "error", error: error.message } : part) : `Generation failed: ${error.message}`)] });
       } finally {
         this.loading = false;
       }
     },
 
-    /** 轮询会话里未结束的生图任务直到全部结束；离开页面时停止，回到会话后由 select 接着轮询。 */
+    /** Poll unfinished image tasks in the conversation until all are done; stop when leaving the page, and resume via select when returning to the conversation. */
     async poll(id) {
       if (this.polling.has(id)) return;
       this.polling.add(id);
@@ -895,7 +895,7 @@ Alpine.data("chat", () => {
       }
     },
 
-    /** 把图片记录的提示词、参考图和设置放回输入框。 */
+    /** Put the image record's prompt, reference images, and settings back into the input box. */
     async reuseTurn(turn) {
       try {
         this.setMode("image");
@@ -935,18 +935,18 @@ Alpine.data("chat", () => {
 
     turnMeta(turn) {
       const { ratio, count } = turn.settings;
-      return `${turn.model} · ${ratio} · ${count} 张`;
+      return `${turn.model} · ${ratio} · ${count} images`;
     },
 
     taskMeta(part) {
       if (part.status === "success") return `${(part.duration_ms / 1000).toFixed(1)}s`;
       if (part.status === "running") return `${part.elapsed_seconds.toFixed(1)}s`;
-      return part.status === "error" ? "生成失败" : "等待中";
+      return part.status === "error" ? "Generation failed" : "Waiting";
     },
 
     lightbox,
 
-    /** 停留在底部时跟随新内容滚动，切换记录后直接定位到底部。 */
+    /** Follow new content when at the bottom; jump straight to the bottom after switching records. */
     follow(el) {
       const changed = this.activeId !== followed;
       followed = this.activeId;
@@ -956,16 +956,16 @@ Alpine.data("chat", () => {
   };
 });
 
-/* ---------- 页面：accounts ---------- */
-/** 远程来源：key 为列表字段，items 为远程账号路径与字段，body 为导入时的请求字段。 */
+/* ---------- Page: accounts ---------- */
+/** Remote sources: key is the list field, items is the remote account path and field, body is the request field used when importing. */
 const SOURCES = {
   cpa: { key: "pools", path: "/api/cpa/pools", items: "files", body: "names" },
   sub2api: { key: "servers", path: "/api/sub2api/servers", items: "accounts", body: "account_ids" },
 };
 
-const JOB_STATUS = { pending: ["排队中", "badge-info"], running: ["导入中", "badge-info"], completed: ["已完成", "badge-success"], failed: ["失败", "badge-error"] };
+const JOB_STATUS = { pending: ["Queued", "badge-info"], running: ["Importing", "badge-info"], completed: ["Completed", "badge-success"], failed: ["Failed", "badge-error"] };
 
-const importText = (data) => `新增 ${data.added} 个，跳过 ${data.skipped} 个${data.errors.length ? `，失败 ${data.errors.length} 个：${data.errors[0].error}` : ""}`;
+const importText = (data) => `Added ${data.added}, skipped ${data.skipped}${data.errors.length ? `, failed ${data.errors.length}: ${data.errors[0].error}` : ""}`;
 
 const accountOf = (raw) => raw.access_token || raw.accessToken ? { ...raw, access_token: raw.access_token || raw.accessToken, accessToken: undefined } : null;
 
@@ -974,7 +974,7 @@ Alpine.data("accounts", () => {
 
   return {
     tab: "accounts",
-    statuses: { 正常: "badge-success", 限流: "badge-warning", 异常: "badge-error", 禁用: "badge-neutral" },
+    statuses: { active: "badge-success", limited: "badge-warning", abnormal: "badge-error", disabled: "badge-neutral" },
     jobStatus: JOB_STATUS,
 
     summary: null,
@@ -1017,7 +1017,7 @@ Alpine.data("accounts", () => {
       Object.values(timers).forEach(clearTimeout);
     },
 
-    /* ---------- 账号 ---------- */
+    /* ---------- Accounts ---------- */
     async loadAccounts() {
       this.loading = true;
       const params = new URLSearchParams({ page: this.page, page_size: this.size, query: this.query, type: this.type, status: this.status });
@@ -1039,15 +1039,15 @@ Alpine.data("accounts", () => {
     get metrics() {
       const { total, active, limited, abnormal, disabled, quota, inflight } = this.summary;
       return [
-        { label: "账号总数", icon: "users-round", value: total, meta: `禁用 ${disabled}` },
-        { label: "正常账号", icon: "circle-check", value: active, meta: `限流 ${limited} · 异常 ${abnormal}` },
-        { label: "剩余额度", icon: "coins", value: quota, meta: "全部账号合计" },
-        { label: "进行中", icon: "activity", value: inflight, meta: "正在生成的图片" },
+        { label: "Total accounts", icon: "users-round", value: total, meta: `Disabled ${disabled}` },
+        { label: "Active accounts", icon: "circle-check", value: active, meta: `Limited ${limited} · Abnormal ${abnormal}` },
+        { label: "Remaining quota", icon: "coins", value: quota, meta: "Total across all accounts" },
+        { label: "In progress", icon: "activity", value: inflight, meta: "Images currently generating" },
       ];
     },
 
     get abnormal() {
-      return this.items.filter((item) => item.status === "异常");
+      return this.items.filter((item) => item.status === "abnormal");
     },
 
     get allSelected() {
@@ -1057,7 +1057,7 @@ Alpine.data("accounts", () => {
     resetText(value) {
       if (!value) return "—";
       const seconds = dayjs(value).diff(dayjs(), "second");
-      if (seconds <= 0) return "已恢复";
+      if (seconds <= 0) return "Recovered";
       const pad = (number) => String(number).padStart(2, "0");
       return `${Math.floor(seconds / 3600)}h:${pad(Math.floor(seconds % 3600 / 60))}m`;
     },
@@ -1065,7 +1065,7 @@ Alpine.data("accounts", () => {
     mask: (value) => `${value.slice(0, 28)}…${value.slice(-14)}`,
 
     async remove(tokens, title) {
-      if (!await confirmDialog({ title, text: "删除后无法恢复。", ok: "删除" })) return;
+      if (!await confirmDialog({ title, text: "This cannot be undone after deletion.", ok: "Delete" })) return;
       this.busy = "delete";
       try {
         await api("/api/accounts", { method: "DELETE", body: { tokens } });
@@ -1081,7 +1081,7 @@ Alpine.data("accounts", () => {
       this.busy = "quota";
       try {
         const data = await api("/api/accounts/quota", { method: "POST" });
-        if (data.errors.length) toast(`${data.queried} 个账号已更新，${data.errors.length} 个失败：${data.errors[0].error}`);
+        if (data.errors.length) toast(`${data.queried} accounts updated, ${data.errors.length} failed: ${data.errors[0].error}`);
         await this.loadAccounts();
       } catch (error) {
         toast(error.message);
@@ -1122,7 +1122,7 @@ Alpine.data("accounts", () => {
       this.edit.testing = true;
       try {
         const { result } = await api("/api/proxy/test", { method: "POST", body: { url: this.edit.proxy } });
-        result.ok ? toast(`代理可用，耗时 ${result.latency_ms} ms，状态码 ${result.status}`, "info") : toast(`代理不可用：${result.error}`);
+        result.ok ? toast(`Proxy available, took ${result.latency_ms} ms, status code ${result.status}`, "info") : toast(`Proxy unavailable: ${result.error}`);
       } catch (error) {
         toast(error.message);
       } finally {
@@ -1143,9 +1143,9 @@ Alpine.data("accounts", () => {
       }
     },
 
-    /* ---------- 导入 ---------- */
+    /* ---------- Import ---------- */
     get importTitle() {
-      return { menu: "导入账号", oauth: "登录已有账号", token: "导入 Access Token", session: "导入 Session JSON", codex: "导入 Codex 认证 JSON", files: "导入账号 JSON 文件" }[this.imp.method];
+      return { menu: "Import accounts", oauth: "Sign in to an existing account", token: "Import Access Token", session: "Import Session JSON", codex: "Import Codex auth JSON", files: "Import account JSON files" }[this.imp.method];
     },
 
     get tokenList() {
@@ -1183,7 +1183,7 @@ Alpine.data("accounts", () => {
         if (method === "codex") return this.submitImport("/api/accounts", [accountOf(JSON.parse(codex))]);
         return this.submitImport("/api/accounts/oauth/finish", { session_id: this.imp.oauth.session_id, callback: this.imp.callback });
       } catch (error) {
-        toast(`内容格式不正确：${error.message}`);
+        toast(`Invalid content format: ${error.message}`);
       }
     },
 
@@ -1204,10 +1204,10 @@ Alpine.data("accounts", () => {
         }));
         const accounts = results.flat();
         const failed = results.filter((list) => !list.length).length;
-        if (!accounts.length) return toast("所选文件中没有可导入的账号");
-        if (await confirmDialog({ title: "确认导入", text: `识别到 ${accounts.length} 个账号${failed ? `，${failed} 个文件未识别` : ""}。`, ok: "导入", danger: false })) await this.submitImport("/api/accounts", accounts);
+        if (!accounts.length) return toast("No importable accounts in the selected files");
+        if (await confirmDialog({ title: "Confirm import", text: `Recognized ${accounts.length} accounts${failed ? `, ${failed} files not recognized` : ""}.`, ok: "Import", danger: false })) await this.submitImport("/api/accounts", accounts);
       } catch (error) {
-        toast(`读取文件失败：${error.message}`);
+        toast(`Failed to read file: ${error.message}`);
       }
     },
 
@@ -1224,7 +1224,7 @@ Alpine.data("accounts", () => {
       }
     },
 
-    /* ---------- 远程来源 ---------- */
+    /* ---------- Remote sources ---------- */
     get sources() {
       return this[SOURCES[this.tab].key];
     },
@@ -1290,7 +1290,7 @@ Alpine.data("accounts", () => {
       form.loadingGroups = true;
       try {
         const { groups } = await api(`/api/sub2api/servers/${form.id}/groups`);
-        if (!groups.length) toast("对方服务没有配置分组", "info");
+        if (!groups.length) toast("The remote service has no groups configured", "info");
         form.groups = groups.length ? groups : null;
       } catch (error) {
         toast(error.message);
@@ -1299,10 +1299,10 @@ Alpine.data("accounts", () => {
       }
     },
 
-    groupLabel: (group) => `${group.name || `分组 ${group.id}`}${group.platform ? `（${group.platform}）` : ""}${group.account_count ? ` · ${group.active_account_count}/${group.account_count}` : ""}`,
+    groupLabel: (group) => `${group.name || `Group ${group.id}`}${group.platform ? ` (${group.platform})` : ""}${group.account_count ? ` · ${group.active_account_count}/${group.account_count}` : ""}`,
 
     async removeSource(item) {
-      if (!await confirmDialog({ title: "删除连接", text: `删除「${item.name || item.base_url}」后，已导入的账号不受影响。`, ok: "删除" })) return;
+      if (!await confirmDialog({ title: "Delete connection", text: `After deleting "${item.name || item.base_url}", already imported accounts are unaffected.`, ok: "Delete" })) return;
       const { key, path } = SOURCES[this.tab];
       try {
         this[key] = (await api(`${path}/${item.id}`, { method: "DELETE" }))[key];
@@ -1325,11 +1325,11 @@ Alpine.data("accounts", () => {
       }
     },
 
-    /** Sub2API 账号太多，按页向对方服务读取；CPA 文件少，一次读完后本地筛选。 */
+    /** Sub2API has too many accounts, so read page by page from the remote service; CPA has few files, read all at once then filter locally. */
     async loadBrowser() {
       const { source, page, size, query } = this.browser;
       const { accounts, total } = await api(`/api/sub2api/servers/${source.id}/accounts?page=${page}&size=${size}&search=${encodeURIComponent(query)}`);
-      const rows = accounts.map((account) => ({ key: String(account.id), title: account.email || account.name || account.id, meta: `ID ${account.id}${account.expires_at ? ` · ${dayjs(account.expires_at).format("YYYY-MM-DD HH:mm")} 过期` : ""}`, plan: account.plan_type, status: account.status }));
+      const rows = accounts.map((account) => ({ key: String(account.id), title: account.email || account.name || account.id, meta: `ID ${account.id}${account.expires_at ? ` · expires ${dayjs(account.expires_at).format("YYYY-MM-DD HH:mm")}` : ""}`, plan: account.plan_type, status: account.status }));
       Object.assign(this.browser, { rows, total });
     },
 
@@ -1385,7 +1385,7 @@ Alpine.data("accounts", () => {
   };
 });
 
-/* ---------- 页面：keys ---------- */
+/* ---------- Page: keys ---------- */
 Alpine.data("keys", () => ({
   items: [],
   loading: true,
@@ -1443,7 +1443,7 @@ Alpine.data("keys", () => ({
   },
 
   async remove(item) {
-    if (!await confirmDialog({ title: "删除密钥", text: `删除「${item.name || item.key}」后，使用它的调用会立即失效。`, ok: "删除" })) return;
+    if (!await confirmDialog({ title: "Delete key", text: `After deleting "${item.name || item.key}", calls using it stop working immediately.`, ok: "Delete" })) return;
     try {
       this.items = (await api(`/api/auth/users/${item.id}`, { method: "DELETE" })).items;
     } catch (error) {
@@ -1452,7 +1452,7 @@ Alpine.data("keys", () => ({
   },
 }));
 
-/* ---------- 页面：gallery ---------- */
+/* ---------- Page: gallery ---------- */
 Alpine.data("gallery", () => ({
   items: [],
   storage: null,
@@ -1534,7 +1534,7 @@ Alpine.data("gallery", () => ({
   },
 
   async remove(body, title, text) {
-    if (!await confirmDialog({ title, text, ok: "删除" })) return;
+    if (!await confirmDialog({ title, text, ok: "Delete" })) return;
     await this.run("delete", async () => {
       await api("/api/images/delete", { method: "POST", body });
       await this.load();
@@ -1552,7 +1552,7 @@ Alpine.data("gallery", () => ({
   compress() {
     this.run("compress", async () => {
       const result = await api("/api/images/storage/compress", { method: "POST" });
-      toast(`已压缩 ${result.compressed} 张图片，节省 ${fmtBytes(result.saved_bytes)}`, "info");
+      toast(`Compressed ${result.compressed} images, saved ${fmtBytes(result.saved_bytes)}`, "info");
       await this.load();
     });
   },
@@ -1561,31 +1561,31 @@ Alpine.data("gallery", () => ({
     await this.run("cleanup", async () => {
       const result = await api(`/api/images/storage/cleanup-to-target?target_free_mb=${this.cleanup.target}&dry_run=false`, { method: "POST" });
       this.cleanup.open = false;
-      toast(`已删除 ${result.removed} 张图片，释放 ${result.freed_mb} MB`, "info");
+      toast(`Deleted ${result.removed} images, freed ${result.freed_mb} MB`, "info");
       await this.load();
     });
   },
 }));
 
-/* ---------- 页面：logs ---------- */
+/* ---------- Page: logs ---------- */
 const LOG_STATUS = {
-  running: { label: "调用中", title: "调用中", icon: "loader-circle", tone: "text-info", badge: "badge-info", bar: "progress-info" },
-  failed: { label: "失败", title: "调用失败", icon: "circle-x", tone: "text-danger", badge: "badge-error", bar: "progress-error" },
-  success: { label: "完成", title: "调用完成", icon: "circle-check", tone: "text-success", badge: "badge-success", bar: "progress-success" },
+  running: { label: "Calling", title: "Calling", icon: "loader-circle", tone: "text-info", badge: "badge-info", bar: "progress-info" },
+  failed: { label: "Failed", title: "Call failed", icon: "circle-x", tone: "text-danger", badge: "badge-error", bar: "progress-error" },
+  success: { label: "Completed", title: "Call completed", icon: "circle-check", tone: "text-success", badge: "badge-success", bar: "progress-success" },
 };
 
 const LOG_FIELDS = {
-  duration_ms: "耗时（毫秒）",
-  endpoint: "调用地址",
-  key_id: "令牌 ID",
-  key_name: "令牌名称",
-  model: "模型",
-  request_text: "请求内容",
-  role: "角色",
-  stage: "当前阶段",
-  started_at: "开始时间",
-  status: "状态",
-  updated_at: "更新时间",
+  duration_ms: "Duration (ms)",
+  endpoint: "Endpoint",
+  key_id: "Token ID",
+  key_name: "Token name",
+  model: "Model",
+  request_text: "Request content",
+  role: "Role",
+  stage: "Current stage",
+  started_at: "Start time",
+  status: "Status",
+  updated_at: "Updated time",
 };
 
 Alpine.data("logs", () => {
@@ -1653,7 +1653,7 @@ Alpine.data("logs", () => {
     },
 
     async remove(ids) {
-      if (!await confirmDialog({ title: ids.length > 1 ? "删除所选日志" : "删除日志", text: `删除 ${ids.length} 条日志后无法恢复。`, ok: "删除" })) return;
+      if (!await confirmDialog({ title: ids.length > 1 ? "Delete selected logs" : "Delete log", text: `Deleting ${ids.length} logs cannot be undone.`, ok: "Delete" })) return;
       try {
         await api("/api/logs/delete", { method: "POST", body: { ids } });
         this.selected = this.selected.filter((id) => !ids.includes(id));
@@ -1680,14 +1680,14 @@ Alpine.data("logs", () => {
   };
 });
 
-/* ---------- 页面：settings ---------- */
-/** 左侧分组：保存时只提交有改动的分组字段，服务端按字段合并。 */
+/* ---------- Page: settings ---------- */
+/** Left-side groups: on save only submit the fields of changed groups; the server merges by field. */
 const SETTING_TABS = [
-  { key: "global", label: "全局设置", fields: ["image_model_name", "default_upstream_model_name", "default_thinking_effort", "image_codex_model", "image_codex_image_model", "global_system_prompt"] },
-  { key: "account", label: "账号维护", fields: ["refresh_account_interval_minute", "auto_remove_invalid_accounts"] },
-  { key: "image", label: "图片生成", fields: ["base_url", "image_retention_days", "image_poll_timeout_secs", "image_account_concurrency", "image_account_retries", "remove_conversation_after_result"] },
-  { key: "storage", label: "图片存储", fields: ["image_storage"] },
-  { key: "proxy", label: "网络代理", fields: ["proxy"] },
+  { key: "global", label: "Global settings", fields: ["image_model_name", "default_upstream_model_name", "default_thinking_effort", "image_codex_model", "image_codex_image_model", "global_system_prompt"] },
+  { key: "account", label: "Account maintenance", fields: ["refresh_account_interval_minute", "auto_remove_invalid_accounts"] },
+  { key: "image", label: "Image generation", fields: ["base_url", "image_retention_days", "image_poll_timeout_secs", "image_account_concurrency", "image_account_retries", "remove_conversation_after_result"] },
+  { key: "storage", label: "Image storage", fields: ["image_storage"] },
+  { key: "proxy", label: "Network proxy", fields: ["proxy"] },
   { key: "clearance", label: "FlareSolverr", fields: ["proxy_runtime"] },
 ];
 
@@ -1699,20 +1699,20 @@ Alpine.data("settings", () => ({
   busy: "",
   targetUrl: "https://chatgpt.com",
   results: {},
-  onOff: [[true, "开启"], [false, "关闭"]],
-  thinking: [["auto", "自动"], ["standard", "标准"], ["extended", "扩展"], ["max", "最大"]],
-  storageModes: [["local", "仅本机"], ["webdav", "仅 WebDAV"], ["both", "本机和 WebDAV"]],
-  egressModes: [["direct", "直连"], ["single_proxy", "单代理 / WARP"]],
-  clearanceModes: [["none", "不启用"], ["manual", "手动 Cookie"], ["flaresolverr", "FlareSolverr"]],
+  onOff: [[true, "On"], [false, "Off"]],
+  thinking: [["auto", "Auto"], ["standard", "Standard"], ["extended", "Extended"], ["max", "Max"]],
+  storageModes: [["local", "Local only"], ["webdav", "WebDAV only"], ["both", "Local and WebDAV"]],
+  egressModes: [["direct", "Direct"], ["single_proxy", "Single proxy / WARP"]],
+  clearanceModes: [["none", "Disabled"], ["manual", "Manual Cookie"], ["flaresolverr", "FlareSolverr"]],
   imageNumbers: [
-    { key: "image_retention_days", label: "图片保留时间", desc: "超过该天数的生成图片会被自动清理。", unit: "天" },
-    { key: "image_poll_timeout_secs", label: "图片轮询超时", desc: "等待单次图片生成结果的最长时间。", unit: "秒" },
-    { key: "image_account_concurrency", label: "单账号图片并发", desc: "同一账号同时进行的图片任务数量上限。", unit: "个" },
-    { key: "image_account_retries", label: "失败换号重试", desc: "生图失败（内容违规除外）时更换账号重试的次数，0 为不重试。", unit: "次" },
+    { key: "image_retention_days", label: "Image retention time", desc: "Generated images older than this many days are cleaned up automatically.", unit: "days" },
+    { key: "image_poll_timeout_secs", label: "Image poll timeout", desc: "Maximum time to wait for a single image generation result.", unit: "seconds" },
+    { key: "image_account_concurrency", label: "Per-account image concurrency", desc: "Upper limit on image tasks running simultaneously for one account.", unit: "tasks" },
+    { key: "image_account_retries", label: "Retry with another account on failure", desc: "Number of times to switch accounts and retry when image generation fails (except content violations); 0 means no retry.", unit: "times" },
   ],
   clearanceNumbers: [
-    { key: "timeout_sec", label: "获取超时", desc: "单次获取通行凭证允许等待的最长时间。" },
-    { key: "refresh_interval", label: "刷新间隔", desc: "通行凭证自动重新获取的间隔。" },
+    { key: "timeout_sec", label: "Fetch timeout", desc: "Maximum time allowed to wait for a single clearance credential fetch." },
+    { key: "refresh_interval", label: "Refresh interval", desc: "Interval at which the clearance credential is automatically re-fetched." },
   ],
 
   init() {
@@ -1767,7 +1767,7 @@ Alpine.data("settings", () => ({
   testProxy() {
     this.run("test-proxy", async () => {
       const { result } = await api("/api/proxy/test", { method: "POST", body: { url: this.config.proxy } });
-      this.results.proxy = { ok: result.ok, text: result.ok ? `连接正常：HTTP ${result.status}，${result.latency_ms} ms` : `连接失败：${result.error}` };
+      this.results.proxy = { ok: result.ok, text: result.ok ? `Connection OK: HTTP ${result.status}, ${result.latency_ms} ms` : `Connection failed: ${result.error}` };
     });
   },
 
@@ -1775,7 +1775,7 @@ Alpine.data("settings", () => ({
     this.run("test-storage", async () => {
       await this.save();
       const { result } = await api("/api/image-storage/test", { method: "POST", body: {} });
-      this.results.storage = { ok: result.ok, text: result.ok ? `连接可用：HTTP ${result.status}` : `连接失败：${result.error ?? `HTTP ${result.status}`}` };
+      this.results.storage = { ok: result.ok, text: result.ok ? `Connection available: HTTP ${result.status}` : `Connection failed: ${result.error ?? `HTTP ${result.status}`}` };
     });
   },
 
@@ -1783,7 +1783,7 @@ Alpine.data("settings", () => ({
     this.run("sync", async () => {
       await this.save();
       const { result } = await api("/api/image-storage/sync", { method: "POST", body: {} });
-      this.results.storage = { ok: !result.failed, text: `同步完成：上传 ${result.uploaded}，跳过 ${result.skipped}，失败 ${result.failed}` };
+      this.results.storage = { ok: !result.failed, text: `Sync complete: uploaded ${result.uploaded}, skipped ${result.skipped}, failed ${result.failed}` };
     });
   },
 
@@ -1791,7 +1791,7 @@ Alpine.data("settings", () => ({
     this.run("test-runtime", async () => {
       await this.save();
       const { result } = await api("/api/proxy/test", { method: "POST", body: { url: "" } });
-      this.results.runtime = { ok: result.ok, text: result.ok ? `代理可用：HTTP ${result.status}，${result.latency_ms} ms，来源 ${result.proxy_source}` : `代理不可用：${result.error}（${result.latency_ms} ms）` };
+      this.results.runtime = { ok: result.ok, text: result.ok ? `Proxy available: HTTP ${result.status}, ${result.latency_ms} ms, source ${result.proxy_source}` : `Proxy unavailable: ${result.error} (${result.latency_ms} ms)` };
     });
   },
 
@@ -1799,80 +1799,80 @@ Alpine.data("settings", () => ({
     this.run("test-clearance", async () => {
       await this.save();
       const { result } = await api("/api/proxy/clearance/test", { method: "POST", body: { target_url: this.targetUrl } });
-      this.results.clearance = { ok: result.ok, text: result.ok ? `获取成功：${result.has_cookies ? "已取得 Cookie" : "未取得 Cookie"}，${result.latency_ms} ms` : `获取失败：${result.error ?? result.status}（${result.latency_ms} ms）` };
+      this.results.clearance = { ok: result.ok, text: result.ok ? `Fetch succeeded: ${result.has_cookies ? "Cookie obtained" : "No Cookie obtained"}, ${result.latency_ms} ms` : `Fetch failed: ${result.error ?? result.status} (${result.latency_ms} ms)` };
     });
   },
 }));
 
-/* ---------- 页面：docs ---------- */
+/* ---------- Page: docs ---------- */
 const docs = [
   {
-    title: "模型列表", method: "GET", path: "/v1/models",
-    input: [["Authorization", "header", "Bearer <auth-key>。"]],
-    output: [["data", "array", "模型列表，包含 id、object、created、owned_by，生图模型额外带 type 为 image。"]],
+    title: "Model list", method: "GET", path: "/v1/models",
+    input: [["Authorization", "header", "Bearer <auth-key>."]],
+    output: [["data", "array", "Model list, including id, object, created, owned_by; image models additionally have type set to image."]],
     example: (base, key) => `curl ${base}/v1/models \\
   -H "Authorization: Bearer ${key}"`,
   },
   {
-    title: "聊天补全", method: "POST", path: "/v1/chat/completions",
-    input: [["model", "string", "模型名，例如 gpt-6-mini，也可用于图片兼容场景。"], ["messages", "array", "OpenAI 兼容消息数组。"], ["stream", "boolean", "可选，是否流式返回。"], ["n", "number", "可选，图片兼容场景会解析为生成数量。"]],
-    output: [["id", "string", "响应 ID。"], ["choices", "array", "OpenAI 兼容 choices。"], ["usage", "object", "可选，token 使用信息。"]],
+    title: "Chat completions", method: "POST", path: "/v1/chat/completions",
+    input: [["model", "string", "Model name, e.g. gpt-6-mini; also usable for image-compatible scenarios."], ["messages", "array", "OpenAI-compatible message array."], ["stream", "boolean", "Optional, whether to return streaming."], ["n", "number", "Optional, parsed as the number to generate in image-compatible scenarios."]],
+    output: [["id", "string", "Response ID."], ["choices", "array", "OpenAI-compatible choices."], ["usage", "object", "Optional, token usage information."]],
     example: (base, key) => `curl ${base}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${key}" \\
-  -d '{"model":"gpt-6-mini","messages":[{"role":"user","content":"你好"}]}'`,
+  -d '{"model":"gpt-6-mini","messages":[{"role":"user","content":"Hello"}]}'`,
   },
   {
     title: "Responses", method: "POST", path: "/v1/responses",
-    input: [["model", "string", "模型名。"], ["input", "string | array | object", "用户输入，图片生成会从中解析提示词。"], ["tools", "array", "可选，传入 web_search 可开启联网搜索。"], ["stream", "boolean", "可选，是否流式返回。"]],
-    output: [["id", "string", "响应 ID。"], ["output", "array", "Responses 兼容输出。"], ["status", "string", "响应状态。"]],
+    input: [["model", "string", "Model name."], ["input", "string | array | object", "User input; image generation parses the prompt from it."], ["tools", "array", "Optional, pass web_search to enable web search."], ["stream", "boolean", "Optional, whether to return streaming."]],
+    output: [["id", "string", "Response ID."], ["output", "array", "Responses-compatible output."], ["status", "string", "Response status."]],
     example: (base, key) => `curl ${base}/v1/responses \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${key}" \\
-  -d '{"model":"gpt-6-mini","input":"搜索 ChatGPT 最新动态","tools":[{"type":"web_search"}]}'`,
+  -d '{"model":"gpt-6-mini","input":"Search for the latest ChatGPT news","tools":[{"type":"web_search"}]}'`,
   },
   {
-    title: "图片生成", method: "POST", path: "/v1/images/generations",
-    input: [["prompt", "string", "图片生成提示词。"], ["model", "string", "可选，默认为生图模型。"], ["n", "number", "可选，生成数量，当前限制 1-4。"], ["size", "string", "可选，图片尺寸。"], ["quality", "string", "可选，默认 auto。"], ["response_format", "string", "可选，默认 b64_json。"]],
-    output: [["data", "array", "图片结果列表。"], ["data[].b64_json", "string", "base64 图片内容。"], ["data[].url", "string", "部分配置下返回图片 URL。"]],
+    title: "Image generation", method: "POST", path: "/v1/images/generations",
+    input: [["prompt", "string", "Image generation prompt."], ["model", "string", "Optional, defaults to the image model."], ["n", "number", "Optional, number to generate, currently limited to 1-4."], ["size", "string", "Optional, image size."], ["quality", "string", "Optional, defaults to auto."], ["response_format", "string", "Optional, defaults to b64_json."]],
+    output: [["data", "array", "List of image results."], ["data[].b64_json", "string", "base64 image content."], ["data[].url", "string", "Returns an image URL under some configurations."]],
     example: (base, key) => `curl ${base}/v1/images/generations \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${key}" \\
-  -d '{"model":"gpt-image-2.6","prompt":"一张极简产品海报","n":1}'`,
+  -d '{"model":"gpt-image-2.6","prompt":"A minimalist product poster","n":1}'`,
   },
   {
-    title: "图片编辑", method: "POST", path: "/v1/images/edits",
-    input: [["image", "file | file[] | URL", "参考图，支持 multipart 上传，也支持 JSON 图片链接。"], ["prompt", "string", "编辑提示词。"], ["model", "string", "可选，默认为生图模型。"], ["n", "number", "可选，生成数量，当前限制 1-4。"], ["size", "string", "可选，图片尺寸。"], ["quality", "string", "可选，默认 auto。"]],
-    output: [["data", "array", "编辑后的图片结果列表。"], ["data[].b64_json", "string", "base64 图片内容。"], ["data[].url", "string", "部分配置下返回图片 URL。"]],
+    title: "Image editing", method: "POST", path: "/v1/images/edits",
+    input: [["image", "file | file[] | URL", "Reference image, supports multipart upload and also JSON image links."], ["prompt", "string", "Edit prompt."], ["model", "string", "Optional, defaults to the image model."], ["n", "number", "Optional, number to generate, currently limited to 1-4."], ["size", "string", "Optional, image size."], ["quality", "string", "Optional, defaults to auto."]],
+    output: [["data", "array", "List of edited image results."], ["data[].b64_json", "string", "base64 image content."], ["data[].url", "string", "Returns an image URL under some configurations."]],
     example: (base, key) => `curl ${base}/v1/images/edits \\
   -H "Authorization: Bearer ${key}" \\
   -F "model=gpt-image-2.6" \\
-  -F "prompt=改成赛博朋克夜景" \\
+  -F "prompt=Change to a cyberpunk night scene" \\
   -F "image=@./input.png"`,
   },
   {
-    title: "语音合成", method: "POST", path: "/v1/audio/speech",
-    input: [["input", "string", "要合成的文本，必填。"], ["voice", "string", "可选，官网音色 juniper/maple/cove/breeze/orbit/glimmer/ember/fathom/vale，也兼容 alloy/ash/coral 等 OpenAI 音色名。"], ["response_format", "string", "可选，音频格式，默认 mp3。"], ["model", "string", "可选，仅回显用途。"]],
-    output: [["binary", "audio", "音频二进制内容，Content-Type 形如 audio/mpeg。"], ["error", "object", "失败时返回 { detail: { error } }。"]],
+    title: "Speech synthesis", method: "POST", path: "/v1/audio/speech",
+    input: [["input", "string", "Text to synthesize, required."], ["voice", "string", "Optional, official voices juniper/maple/cove/breeze/orbit/glimmer/ember/fathom/vale; also compatible with OpenAI voice names like alloy/ash/coral."], ["response_format", "string", "Optional, audio format, defaults to mp3."], ["model", "string", "Optional, for echo purposes only."]],
+    output: [["binary", "audio", "Audio binary content; Content-Type is like audio/mpeg."], ["error", "object", "Returns { detail: { error } } on failure."]],
     example: (base, key) => `curl ${base}/v1/audio/speech \\
   -H "Authorization: Bearer ${key}" \\
   -H "Content-Type: application/json" \\
-  -d '{"model":"gpt-tts","input":"你好，这是一段语音合成的测试。","voice":"alloy"}' \\
+  -d '{"model":"gpt-tts","input":"Hello, this is a speech synthesis test.","voice":"alloy"}' \\
   --output speech.mp3`,
   },
   {
-    title: "语音转写", method: "POST", path: "/v1/audio/transcriptions",
-    input: [["file", "file", "音频文件，必填，multipart 上传。"], ["response_format", "string", "可选，传 text 时返回纯文本。"], ["model", "string", "可选，仅回显用途。"]],
-    output: [["text", "string", "转写出的文本内容。"]],
+    title: "Speech transcription", method: "POST", path: "/v1/audio/transcriptions",
+    input: [["file", "file", "Audio file, required, multipart upload."], ["response_format", "string", "Optional, returns plain text when set to text."], ["model", "string", "Optional, for echo purposes only."]],
+    output: [["text", "string", "The transcribed text content."]],
     example: (base, key) => `curl ${base}/v1/audio/transcriptions \\
   -H "Authorization: Bearer ${key}" \\
   -F "file=@speech.mp3" \\
   -F "model=gpt-transcribe"`,
   },
   {
-    title: "任务状态查询", method: "GET", path: "/api/tasks?type={type}&ids={taskId1,taskId2}",
-    input: [["type", "string", "可选，逗号分隔任务类型：image_generation、image_edit。"], ["ids", "string", "可选，逗号分隔数据库任务 ID；不传则返回当前用户任务。"]],
-    output: [["items", "array", "任务列表，每个任务的 results 是关系化产物列表。"], ["missing_ids", "string[]", "查询指定 ids 时，返回未找到的任务 ID。"], ["items[].results[].url", "string", "图片或文件下载地址。"]],
+    title: "Task status query", method: "GET", path: "/api/tasks?type={type}&ids={taskId1,taskId2}",
+    input: [["type", "string", "Optional, comma-separated task types: image_generation, image_edit."], ["ids", "string", "Optional, comma-separated database task IDs; if omitted, returns the current user's tasks."]],
+    output: [["items", "array", "Task list; each task's results is a list of relational artifacts."], ["missing_ids", "string[]", "When querying specific ids, returns the task IDs not found."], ["items[].results[].url", "string", "Image or file download address."]],
     example: (base, key) => `curl "${base}/api/tasks?type=image_generation&ids=<task_id>" \\
   -H "Authorization: Bearer ${key}"`,
   },
@@ -1883,7 +1883,7 @@ Alpine.data("docs", () => ({
   base: location.origin,
   key: session.get().key,
   models: [],
-  guides: [["overview", "接入说明"], ["authentication", "身份认证"], ["models", "可用模型"]],
+  guides: [["overview", "Integration guide"], ["authentication", "Authentication"], ["models", "Available models"]],
   active: "overview",
 
   init() {
@@ -1896,10 +1896,10 @@ Alpine.data("docs", () => ({
   },
 }));
 
-/* ---------- 路由与全局状态 ---------- */
+/* ---------- Routing and global state ---------- */
 const ADMIN = "admin";
 
-/** 路由表：page 对应 index.html 中的 <template id="page-<page>"> 与同名 Alpine 组件，role 为可访问角色，bare 表示不显示侧栏。 */
+/** Route table: page maps to <template id="page-<page>"> in index.html and the same-named Alpine component; role is the accessible role, bare means the sidebar is hidden. */
 const routes = {
   "/login": { page: "login", bare: true },
   "/overview": { page: "overview", role: ADMIN },
@@ -1913,16 +1913,16 @@ const routes = {
 };
 
 const adminNav = [
-  { group: "创作" },
-  { path: "/chat", label: "创作台", icon: "message-circle" },
-  { group: "管理" },
-  { path: "/overview", label: "概览", icon: "layout-dashboard" },
-  { path: "/accounts", label: "号池", icon: "users-round" },
-  { path: "/keys", label: "密钥", icon: "key-round" },
-  { path: "/gallery", label: "图库", icon: "images" },
-  { path: "/logs", label: "日志", icon: "scroll-text" },
-  { path: "/settings", label: "设置", icon: "settings-2" },
-  { group: "文档" },
+  { group: "Creation" },
+  { path: "/chat", label: "Studio", icon: "message-circle" },
+  { group: "Management" },
+  { path: "/overview", label: "Overview", icon: "layout-dashboard" },
+  { path: "/accounts", label: "Account Pool", icon: "users-round" },
+  { path: "/keys", label: "Keys", icon: "key-round" },
+  { path: "/gallery", label: "Gallery", icon: "images" },
+  { path: "/logs", label: "Logs", icon: "scroll-text" },
+  { path: "/settings", label: "Settings", icon: "settings-2" },
+  { group: "Docs" },
   { path: "/docs", label: "API", icon: "book-open" },
 ];
 
@@ -2005,7 +2005,7 @@ Alpine.magic("md", () => markdown);
 Alpine.magic("copy", (el) => (text) => copyText(text, el));
 Alpine.magic("go", () => navigate);
 
-/** 切换页面：校验登录与角色后加载页面模板和脚本，渲染进主内容区。 */
+/** Switch pages: after validating login and role, load the page template and script, and render into the main content area. */
 function navigate(target, replace = false) {
   const app = Alpine.store("app");
   app.session = session.get();

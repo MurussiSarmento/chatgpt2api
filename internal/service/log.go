@@ -37,8 +37,8 @@ func (s *LogService) NewCallLog(identity Identity, endpoint string, model string
 		started = time.Now()
 	}
 	stamp := started.Format("2006-01-02 15:04:05")
-	events := []map[string]any{{"time": stamp, "elapsed_ms": int64(0), "message": "调用已接收"}}
-	detail := map[string]any{"key_id": identity.ID, "key_name": identity.Name, "role": identity.Role, "endpoint": endpoint, "model": model, "started_at": stamp, "updated_at": stamp, "duration_ms": int64(0), "status": "running", "stage": "调用已接收", "events": events}
+	events := []map[string]any{{"time": stamp, "elapsed_ms": int64(0), "message": "Call received"}}
+	detail := map[string]any{"key_id": identity.ID, "key_name": identity.Name, "role": identity.Role, "endpoint": endpoint, "model": model, "started_at": stamp, "updated_at": stamp, "duration_ms": int64(0), "status": "running", "stage": "Call received", "events": events}
 	if requestText != "" {
 		value := []rune(requestText)
 		if len(value) > 1000 {
@@ -47,7 +47,7 @@ func (s *LogService) NewCallLog(identity Identity, endpoint string, model string
 		detail["request_text"] = requestText
 	}
 	call := &CallLog{service: s, identity: identity, summary: summary, started: started, detail: detail, events: events}
-	item, err := s.Create(context.Background(), summary+"调用已接收", detail)
+	item, err := s.Create(context.Background(), summary+" call received", detail)
 	if err == nil {
 		call.id = item.ID
 	}

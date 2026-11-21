@@ -16,7 +16,7 @@ import (
 
 const CodexBaseURL = "https://chatgpt.com/backend-api/codex/responses"
 
-// Codex CLI 的当前客户端版本，/backend-api/codex/models 用它做能力协商。
+// The current Codex CLI client version; /backend-api/codex/models uses it for capability negotiation.
 const CodexClientVersion = "0.171.0"
 const codexUserAgent = "codex_cli_rs/" + CodexClientVersion + " (Windows 11; x86_64)"
 
@@ -35,7 +35,7 @@ func NewCodexAPI(token string, baseurl string, accountProxy string, proxy Client
 	return &CodexAPI{token: token, baseurl: baseurl, accountProxy: accountProxy, proxy: proxy}
 }
 
-// WithAccountID 设置 ChatGPT-Account-ID，Codex 接口在多账号场景下需要它。
+// WithAccountID sets the ChatGPT-Account-ID, which the Codex endpoint needs in multi-account scenarios.
 func (c *CodexAPI) WithAccountID(accountID string) *CodexAPI {
 	c.accountID = accountID
 	return c
@@ -85,9 +85,9 @@ func (c *CodexAPI) StartImageGen(ctx context.Context, prompt string, model strin
 	return c.ReadImage(response.Body)
 }
 
-// ReadImage 读取 Codex Responses 流里的图片结果。
-// 新版本把结果放在 response.output_item.done 的 image_generation_call 里，
-// 也可能在 response.completed 的 output 数组里返回。
+// ReadImage reads the image result from the Codex Responses stream.
+// Newer versions place the result in the image_generation_call of response.output_item.done,
+// and it may also be returned in the output array of response.completed.
 func (c *CodexAPI) ReadImage(reader io.Reader) ([]byte, error) {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64*1024), 64*1024*1024)
@@ -105,11 +105,11 @@ func (c *CodexAPI) ReadImage(reader io.Reader) ([]byte, error) {
 			continue
 		}
 		if message, ok := event["error"].(map[string]any); ok {
-			return nil, errors.New("Codex 图片生成失败: " + messageString(message))
+			return nil, errors.New("Codex image generation failed: " + messageString(message))
 		}
 		eventType, _ := event["type"].(string)
 		if strings.Contains(eventType, "error") {
-			return nil, errors.New("Codex 图片生成失败: " + messageString(event))
+			return nil, errors.New("Codex image generation failed: " + messageString(event))
 		}
 		switch eventType {
 		case "response.output_item.done":

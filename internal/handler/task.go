@@ -25,7 +25,7 @@ func (h *TaskHandler) list(c *gin.Context) {
 	for _, value := range splitQuery(c.Query("ids")) {
 		id, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
-			writeError(c, http.StatusBadRequest, errors.New("任务编号格式不正确"))
+			writeError(c, http.StatusBadRequest, errors.New("invalid task ID format"))
 			return
 		}
 		ids = append(ids, id)
@@ -40,7 +40,7 @@ func (h *TaskHandler) list(c *gin.Context) {
 func (h *TaskHandler) imageGeneration(c *gin.Context) {
 	var body ImageGenerationRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		writeError(c, http.StatusBadRequest, errors.New("请填写图片描述"))
+		writeError(c, http.StatusBadRequest, errors.New("please provide an image description"))
 		return
 	}
 	if body.Count == 0 {

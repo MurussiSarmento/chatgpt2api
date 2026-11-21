@@ -45,7 +45,7 @@ func (h *AuthHandler) list(c *gin.Context) {
 func (h *AuthHandler) create(c *gin.Context) {
 	var body CreateAPIKeyRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		writeError(c, http.StatusBadRequest, errors.New("请输入新的专用密钥"))
+		writeError(c, http.StatusBadRequest, errors.New("please enter a new dedicated key"))
 		return
 	}
 	item, err := h.service.Create(c.Request.Context(), body.Name, body.Key, body.Plan, body.Route)
@@ -60,12 +60,12 @@ func (h *AuthHandler) create(c *gin.Context) {
 func (h *AuthHandler) update(c *gin.Context) {
 	var body UpdateAPIKeyRequest
 	if err := c.ShouldBindJSON(&body); err != nil || body.Name == nil && body.Enabled == nil && body.Key == nil && len(body.Plan) == 0 && len(body.Route) == 0 {
-		writeError(c, http.StatusBadRequest, errors.New("还没有检测到改动，请修改后再保存"))
+		writeError(c, http.StatusBadRequest, errors.New("no changes detected yet; please make changes before saving"))
 		return
 	}
 	item, err := h.service.Update(c.Request.Context(), c.Param("keyID"), body.Name, body.Enabled, body.Key, body.Plan, body.Route)
 	if errors.Is(err, repository.ErrNotFound) {
-		writeError(c, http.StatusNotFound, errors.New("这条用户密钥不存在，可能已经被删除"))
+		writeError(c, http.StatusNotFound, errors.New("this user key does not exist; it may have already been deleted"))
 		return
 	}
 	if err != nil {
@@ -79,7 +79,7 @@ func (h *AuthHandler) update(c *gin.Context) {
 func (h *AuthHandler) delete(c *gin.Context) {
 	err := h.service.Delete(c.Request.Context(), c.Param("keyID"))
 	if errors.Is(err, repository.ErrNotFound) {
-		writeError(c, http.StatusNotFound, errors.New("这条用户密钥不存在，可能已经被删除"))
+		writeError(c, http.StatusNotFound, errors.New("this user key does not exist; it may have already been deleted"))
 		return
 	}
 	items, listErr := h.service.List(c.Request.Context())

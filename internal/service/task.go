@@ -12,7 +12,7 @@ import (
 
 const maxActiveTasks = 10
 
-var ErrTooManyTasks = errors.New("进行中的任务太多了，请等一部分完成后再提交")
+var ErrTooManyTasks = errors.New("too many tasks in progress; please wait for some to finish before submitting more")
 
 type TaskService struct {
 	repo     *repository.Repository
