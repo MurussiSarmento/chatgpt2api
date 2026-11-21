@@ -292,13 +292,18 @@ func (u *OpenAIBackendAPI) PollImages(ctx context.Context, conversationID string
 	return u.PollImagesFor(ctx, conversationID, time.Duration(u.options.ImagePollTimeoutSeconds)*time.Second)
 }
 func (u *OpenAIBackendAPI) PollImagesFor(ctx context.Context, conversationID string, timeout time.Duration) ([]string, error) {
-	deadline := time.Now().Add(timeout)
+	start := time.Now()
+	deadline := start.Add(timeout)
+	attempts := 0
+	var lastDetail map[string]any
 	for time.Now().Before(deadline) {
-		ids, err := u.ImageIDs(ctx, conversationID)
+		attempts++
+		detail, err := u.Conversation(ctx, conversationID)
 		if err != nil {
 			return nil, err
 		}
-		if len(ids) > 0 {
+		lastDetail = detail
+		if ids := generatedImageIDs(detail); len(ids) > 0 {
 			return ids, nil
 		}
 		select {
@@ -307,7 +312,97 @@ func (u *OpenAIBackendAPI) PollImagesFor(ctx context.Context, conversationID str
 		case <-time.After(time.Duration(u.options.ImagePollIntervalSeconds * float64(time.Second))):
 		}
 	}
-	return nil, errors.New("ChatGPT image generation timed out")
+	state, assistantText, info := diagnoseImageConversation(lastDetail)
+	return nil, &ImageTimeoutError{Elapsed: time.Since(start), Limit: timeout, Attempts: attempts, ConversationID: conversationID, State: state, AssistantText: assistantText, Info: info}
+}
+
+// ImageTimeoutError is returned when image polling exhausts the configured
+// timeout. It carries a human-readable diagnosis of where the upstream turn
+// stalled so callers can log the full picture instead of a bare "timed out".
+type ImageTimeoutError struct {
+	Elapsed        time.Duration
+	Limit          time.Duration
+	Attempts       int
+	ConversationID string
+	State          string
+	AssistantText  string
+	Info           map[string]any
+}
+
+func (e *ImageTimeoutError) Error() string {
+	message := fmt.Sprintf("Image generation timed out after %ds (limit %ds, %d polling attempts): %s", int(e.Elapsed.Seconds()), int(e.Limit.Seconds()), e.Attempts, e.State)
+	if e.AssistantText != "" {
+		message += " Assistant text: " + e.AssistantText
+	}
+	return message
+}
+
+// Diagnostic returns the structured fields for logging in the call timeline.
+func (e *ImageTimeoutError) Diagnostic() map[string]any {
+	detail := map[string]any{"elapsed_seconds": int(e.Elapsed.Seconds()), "timeout_limit_seconds": int(e.Limit.Seconds()), "poll_attempts": e.Attempts, "conversation_id": e.ConversationID, "upstream_state": e.State}
+	if e.AssistantText != "" {
+		detail["assistant_text"] = e.AssistantText
+	}
+	for key, value := range e.Info {
+		detail[key] = value
+	}
+	return detail
+}
+
+// diagnoseImageConversation inspects the last known conversation state at
+// timeout and classifies why no image was produced yet.
+func diagnoseImageConversation(detail map[string]any) (string, string, map[string]any) {
+	messages := conversationMessages(detail)
+	info := map[string]any{"message_count": len(messages)}
+	if len(messages) == 0 {
+		return "no model response was recorded — the upstream conversation produced no messages, so the account may be overloaded or the turn never started", "", info
+	}
+	assistantText := strings.Builder{}
+	imageInProgress, moderation, lastRole := false, false, ""
+	for _, message := range messages {
+		author, _ := message["author"].(map[string]any)
+		role, _ := author["role"].(string)
+		if role != "" {
+			lastRole = role
+		}
+		metadata, _ := message["metadata"].(map[string]any)
+		if metadata["image_gen_async"] == true {
+			imageInProgress = true
+		}
+		if results, ok := metadata["moderation_results"].([]any); ok && len(results) > 0 {
+			moderation = true
+		}
+		content, _ := message["content"].(map[string]any)
+		parts, _ := content["parts"].([]any)
+		for _, rawPart := range parts {
+			if text, ok := rawPart.(string); ok && role == "assistant" {
+				assistantText.WriteString(text)
+				continue
+			}
+			part, _ := rawPart.(map[string]any)
+			if part["content_type"] == "image_asset_pointer" {
+				partMetadata, _ := part["metadata"].(map[string]any)
+				if partMetadata["generation"] == nil || partMetadata["generation"] == false {
+					imageInProgress = true
+				}
+			}
+		}
+	}
+	text := strings.TrimSpace(assistantText.String())
+	if runes := []rune(text); len(runes) > 500 {
+		text = string(runes[:500]) + "…"
+	}
+	info["last_role"], info["image_in_progress"], info["moderation_flagged"] = lastRole, imageInProgress, moderation
+	switch {
+	case moderation:
+		return "the request appears to have been blocked by a content/safety check before an image was produced", text, info
+	case imageInProgress:
+		return "the model started drawing but the image was still being generated when the timeout was reached — consider increasing the image poll timeout", text, info
+	case text != "":
+		return "the model replied with text instead of an image (often a refusal or a request for clarification) — see the assistant text", text, info
+	default:
+		return "the conversation was created and the model was working, but no image had been produced when the timeout was reached", text, info
+	}
 }
 
 // ImageIDs reads the conversation once and returns the already-generated image IDs within it.

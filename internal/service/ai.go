@@ -317,6 +317,13 @@ func (s *AIService) generateImage(ctx context.Context, request ImageRequest, cal
 			if err == nil {
 				callLog.Add("Received upstream images", map[string]any{"conversation_id": conversationID, "image_ids": ids, "position": index})
 				data, err = client.Download(ctx, conversationID, ids[0])
+			} else {
+				var timeout *chatgpt.ImageTimeoutError
+				if errors.As(err, &timeout) {
+					detail := timeout.Diagnostic()
+					detail["position"], detail["account_email"] = index, email
+					callLog.Add("Image generation timed out", detail)
+				}
 			}
 		}
 	}
