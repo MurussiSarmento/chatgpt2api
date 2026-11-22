@@ -46,7 +46,15 @@ func main() {
 	aiService := service.NewAIService(accountService, catalogService, imageService, logService, proxyService, cfg)
 	audioService := service.NewAudioService(accountService, logService, proxyService, cfg)
 	authService := service.NewAuthService(repo, cfg.APIKey)
-	taskService := service.NewTaskService(repo, aiService, cfg)
+	var vetaService *service.VetaService
+	if vetaToken := os.Getenv("VETA_TOKEN"); vetaToken != "" {
+		vetaService = service.NewVetaService(vetaToken, imageService)
+	}
+	var artistlyService *service.ArtistlyService
+	if artistlyKey := os.Getenv("ARTISTLY_API_KEY"); artistlyKey != "" {
+		artistlyService = service.NewArtistlyService(artistlyKey, imageService)
+	}
+	taskService := service.NewTaskService(repo, aiService, vetaService, artistlyService, cfg)
 	authHandler := handler.NewAuthHandler(authService, cfg.Version)
 	systemHandler := handler.NewSystemHandler(cfg, proxyService)
 	engine := gin.New()
@@ -69,14 +77,6 @@ func main() {
 	imageHandler.RegisterRoutes(admin)
 	handler.NewLogHandler(logService).RegisterRoutes(admin)
 	handler.NewOverviewHandler(service.NewOverviewService(repo)).RegisterRoutes(admin)
-	var vetaService *service.VetaService
-	if vetaToken := os.Getenv("VETA_TOKEN"); vetaToken != "" {
-		vetaService = service.NewVetaService(vetaToken, imageService)
-	}
-	var artistlyService *service.ArtistlyService
-	if artistlyKey := os.Getenv("ARTISTLY_API_KEY"); artistlyKey != "" {
-		artistlyService = service.NewArtistlyService(artistlyKey, imageService)
-	}
 	v1 := engine.Group("/v1", identity)
 	handler.NewCatalogHandler(catalogService, cfg).RegisterRoutes(v1)
 	handler.NewAIHandler(aiService, logService, vetaService, artistlyService).RegisterRoutes(v1)
