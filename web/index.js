@@ -644,7 +644,10 @@ Alpine.data("chat", () => {
       this.error = "";
       let id, base;
       try {
-        ({ id, messages: base } = await this.begin("video", model, prompt, userContent(prompt, refs), { video_settings: turn.settings }));
+        // Use "auto" as the conversation model so the backend never tries to
+        // resolve Veta model names against the ChatGPT account pool. The real
+        // Veta model is stored in the turn metadata and sent to /v1/videos/generations.
+        ({ id, messages: base } = await this.begin("video", "auto", prompt, userContent(prompt, refs), { video_settings: turn.settings }));
         this.input = "";
         this.images = [];
         const body = { prompt, model, aspect_ratio: settings.ratio, duration: String(settings.duration) };
