@@ -93,7 +93,7 @@ func (s *AuthService) Create(ctx context.Context, name string, key string, plan 
 	if key == "" {
 		return repository.APIKey{}, errors.New("please enter a new dedicated key")
 	}
-	if key == s.adminKey {
+	if subtle.ConstantTimeCompare([]byte(key), []byte(s.adminKey)) == 1 {
 		return repository.APIKey{}, errors.New("this key conflicts with the administrator key; please choose a different key")
 	}
 	exists, err := s.repo.APIKeyExists(ctx, key, "")
@@ -126,7 +126,7 @@ func (s *AuthService) Update(ctx context.Context, id string, name *string, enabl
 		}
 	}
 	if key != nil {
-		if *key == "" || *key == s.adminKey {
+		if *key == "" || subtle.ConstantTimeCompare([]byte(*key), []byte(s.adminKey)) == 1 {
 			return repository.APIKey{}, errors.New("please enter a new key different from the administrator key")
 		}
 		exists, err := s.repo.APIKeyExists(ctx, *key, id)

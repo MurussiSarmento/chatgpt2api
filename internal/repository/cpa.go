@@ -22,6 +22,7 @@ func (r *Repository) CPAs(ctx context.Context) ([]CPA, error) {
 	err := r.db.WithContext(ctx).Order("name").Find(&items).Error
 	for index := range items {
 		items[index].ImportJob.normalize()
+		items[index].SecretKey = dec(items[index].SecretKey)
 	}
 	return items, err
 }
@@ -35,11 +36,13 @@ func (r *Repository) CPA(ctx context.Context, id string) (CPA, error) {
 		return CPA{}, err
 	}
 	item.ImportJob.normalize()
+	item.SecretKey = dec(item.SecretKey)
 	return item, nil
 }
 
 func (r *Repository) SaveCPA(ctx context.Context, item CPA) error {
 	item.ImportJob.normalize()
+	item.SecretKey = enc(item.SecretKey)
 	return r.db.WithContext(ctx).Save(&item).Error
 }
 

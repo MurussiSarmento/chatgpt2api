@@ -72,12 +72,16 @@ func (r *Repository) AccountPage(ctx context.Context, page int, pageSize int, qu
 	if err := r.db.WithContext(ctx).Model(&Account{}).Distinct().Order("type").Pluck("type", &types).Error; err != nil {
 		return nil, 0, nil, err
 	}
+	decryptAccounts(items)
 	return items, total, types, nil
 }
 
 func (r *Repository) Accounts(ctx context.Context) ([]Account, error) {
 	var items []Account
 	err := r.db.WithContext(ctx).Order("id").Find(&items).Error
+	if err == nil {
+		decryptAccounts(items)
+	}
 	return items, err
 }
 
@@ -99,6 +103,9 @@ func (r *Repository) AccountTypeCounts(ctx context.Context) (map[string]int64, e
 func (r *Repository) ActiveAccounts(ctx context.Context) ([]Account, error) {
 	var items []Account
 	err := r.db.WithContext(ctx).Where("status NOT IN ?", []string{StatusDisabled, StatusAbnormal}).Order("id").Find(&items).Error
+	if err == nil {
+		decryptAccounts(items)
+	}
 	return items, err
 }
 
@@ -118,6 +125,7 @@ func (r *Repository) NextTextAccount(ctx context.Context, types []string, exclud
 		}
 		return Account{}, err
 	}
+	decryptAccount(&item)
 	return item, nil
 }
 
@@ -129,6 +137,7 @@ func (r *Repository) AccountByEmail(ctx context.Context, email string) (Account,
 		}
 		return Account{}, err
 	}
+	decryptAccount(&item)
 	return item, nil
 }
 
@@ -140,6 +149,7 @@ func (r *Repository) AccountByID(ctx context.Context, id int64) (Account, error)
 		}
 		return Account{}, err
 	}
+	decryptAccount(&item)
 	return item, nil
 }
 
@@ -157,6 +167,7 @@ func (r *Repository) SaveAccounts(ctx context.Context, items []Account) (int, in
 			} else {
 				return err
 			}
+			encryptAccount(&item)
 			if err := tx.Save(&item).Error; err != nil {
 				return err
 			}
@@ -172,6 +183,7 @@ func (r *Repository) DeleteAccounts(ctx context.Context, emails []string) (int64
 }
 
 func (r *Repository) UpdateAccount(ctx context.Context, email string, values map[string]any) (Account, error) {
+	encryptAccountValues(values)
 	result := r.db.WithContext(ctx).Model(&Account{}).Where("email = ?", email).Updates(values)
 	if result.Error != nil {
 		return Account{}, result.Error
@@ -196,6 +208,7 @@ func (r *Repository) ReplaceAccountToken(ctx context.Context, email string, item
 		"last_refresh_at": item.LastRefreshAt,
 		"last_error":      item.LastError,
 	}
+	encryptAccountValues(values)
 	result := r.db.WithContext(ctx).Model(&Account{}).Where("email = ?", email).Updates(values)
 	if result.Error != nil {
 		return Account{}, result.Error

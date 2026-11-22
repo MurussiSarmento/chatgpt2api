@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/basketikun/chatgpt2api/internal/crypto"
 	"gorm.io/gorm"
 )
 
@@ -12,7 +13,8 @@ type APIKey struct {
 	ID         string    `gorm:"type:varchar(32);primaryKey"`
 	Name       string    `gorm:"type:varchar(255);not null;uniqueIndex:api_key_role_name"`
 	Role       string    `gorm:"type:varchar(16);not null;uniqueIndex:api_key_role_name"`
-	Key        string    `gorm:"type:varchar(255);not null;uniqueIndex"`
+	Key        string    `gorm:"type:text;not null"`
+	KeyHash    string    `gorm:"type:varchar(64);not null;index"`
 	Plan       string    `gorm:"type:varchar(32);not null;default:free"`
 	Route      string    `gorm:"type:varchar(32);not null;default:web"`
 	Enabled    bool      `gorm:"not null"`
@@ -24,12 +26,13 @@ func (APIKey) TableName() string { return "api_keys" }
 
 func (r *Repository) APIKeyByValue(ctx context.Context, key string) (APIKey, error) {
 	var item APIKey
-	if err := r.db.WithContext(ctx).Where("key = ? AND enabled = ?", key, true).First(&item).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("key_hash = ? AND enabled = ?", crypto.Hash(key), true).First(&item).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return APIKey{}, ErrNotFound
 		}
 		return APIKey{}, err
 	}
+	item.Key = dec(item.Key)
 	return item, nil
 }
 
@@ -40,6 +43,9 @@ func (r *Repository) TouchAPIKey(ctx context.Context, id string, usedAt time.Tim
 func (r *Repository) APIKeys(ctx context.Context, role string) ([]APIKey, error) {
 	var items []APIKey
 	err := r.db.WithContext(ctx).Where("role = ?", role).Order("created_at").Find(&items).Error
+	for index := range items {
+		items[index].Key = dec(items[index].Key)
+	}
 	return items, err
 }
 
@@ -51,11 +57,12 @@ func (r *Repository) APIKeyByID(ctx context.Context, id string) (APIKey, error) 
 		}
 		return APIKey{}, err
 	}
+	item.Key = dec(item.Key)
 	return item, nil
 }
 
 func (r *Repository) APIKeyExists(ctx context.Context, key string, excludeID string) (bool, error) {
-	db := r.db.WithContext(ctx).Model(&APIKey{}).Where("key = ?", key)
+	db := r.db.WithContext(ctx).Model(&APIKey{}).Where("key_hash = ?", crypto.Hash(key))
 	if excludeID != "" {
 		db = db.Where("id <> ?", excludeID)
 	}
@@ -75,6 +82,8 @@ func (r *Repository) APIKeyNameExists(ctx context.Context, name string, role str
 }
 
 func (r *Repository) SaveAPIKey(ctx context.Context, item APIKey) error {
+	item.KeyHash = crypto.Hash(item.Key)
+	item.Key = enc(item.Key)
 	return r.db.WithContext(ctx).Save(&item).Error
 }
 

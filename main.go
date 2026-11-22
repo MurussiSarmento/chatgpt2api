@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/basketikun/chatgpt2api/internal/config"
+	"github.com/basketikun/chatgpt2api/internal/crypto"
 	"github.com/basketikun/chatgpt2api/internal/handler"
 	"github.com/basketikun/chatgpt2api/internal/repository"
 	"github.com/basketikun/chatgpt2api/internal/service"
@@ -21,6 +22,9 @@ func main() {
 	defer stop()
 	cfg, err := config.Load("config.yaml")
 	if err != nil {
+		log.Fatal(err)
+	}
+	if err := crypto.Init(cfg.EncryptionKey); err != nil {
 		log.Fatal(err)
 	}
 	repo, err := repository.Open(cfg.DatabaseURL)
@@ -67,6 +71,7 @@ func main() {
 	engine.NoRoute(handler.Static("web"))
 	repo.FailRunningTasks(context.Background(), time.Now().UTC())
 	repo.ResetAccountImageInflight(context.Background())
+	repo.EncryptPlaintextSecrets(context.Background())
 
 	scheduler := service.NewScheduler(accountService, imageService, taskService, logService, cfg)
 	scheduler.Run(ctx)

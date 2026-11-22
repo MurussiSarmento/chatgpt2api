@@ -13,6 +13,7 @@ import (
 type Config struct {
 	APIKey         string          `yaml:"api-key" json:"-"`
 	DatabaseURL    string          `yaml:"-" json:"-"`
+	EncryptionKey  string          `yaml:"-" json:"-"`
 	BaseURL        string          `yaml:"base_url" json:"base_url"`
 	Proxy          string          `yaml:"proxy" json:"proxy"`
 	SystemPrompt   string          `yaml:"global_system_prompt" json:"global_system_prompt"`
@@ -115,6 +116,7 @@ func Load(path string) (*Config, error) {
 	if value := os.Getenv("CHATGPT2API_AUTH_KEY"); value != "" {
 		cfg.APIKey = value
 	}
+	cfg.EncryptionKey = os.Getenv("ENCRYPTION_KEY")
 	if value := os.Getenv("PORT"); value != "" {
 		cfg.Port = value
 	}
@@ -123,6 +125,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.APIKey == "" {
 		return nil, errors.New("please set the administrator key in config.yaml or CHATGPT2API_AUTH_KEY first")
+	}
+	if cfg.EncryptionKey == "" {
+		return nil, errors.New("please set ENCRYPTION_KEY (used to encrypt account tokens and secrets at rest)")
 	}
 	return cfg, nil
 }

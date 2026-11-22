@@ -25,6 +25,8 @@ func (r *Repository) Subs(ctx context.Context) ([]Sub, error) {
 	err := r.db.WithContext(ctx).Order("name").Find(&items).Error
 	for index := range items {
 		items[index].ImportJob.normalize()
+		items[index].Password = dec(items[index].Password)
+		items[index].APIKey = dec(items[index].APIKey)
 	}
 	return items, err
 }
@@ -38,11 +40,15 @@ func (r *Repository) Sub(ctx context.Context, id string) (Sub, error) {
 		return Sub{}, err
 	}
 	item.ImportJob.normalize()
+	item.Password = dec(item.Password)
+	item.APIKey = dec(item.APIKey)
 	return item, nil
 }
 
 func (r *Repository) SaveSub(ctx context.Context, item Sub) error {
 	item.ImportJob.normalize()
+	item.Password = enc(item.Password)
+	item.APIKey = enc(item.APIKey)
 	return r.db.WithContext(ctx).Save(&item).Error
 }
 

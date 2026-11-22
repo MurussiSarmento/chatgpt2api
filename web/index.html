@@ -710,8 +710,8 @@
               </dl>
               <dl class="kv" x-show="detailTab === 'token'">
                 <dt>Access Token</dt><dd><span class="mono copyable" title="Click to copy" x-text="mask(detail.access_token)" @click="$copy(detail.access_token)"></span></dd>
-                <dt>Refresh Token</dt><dd><span class="mono copyable" title="Click to copy" x-show="detail.refresh_token" x-text="mask(detail.refresh_token)" @click="$copy(detail.refresh_token)"></span><span x-show="!detail.refresh_token">—</span></dd>
-                <dt>ID Token</dt><dd><span class="mono copyable" title="Click to copy" x-show="detail.id_token" x-text="mask(detail.id_token)" @click="$copy(detail.id_token)"></span><span x-show="!detail.id_token">—</span></dd>
+                <dt>Refresh Token</dt><dd><span x-show="detail.has_refresh_token" class="text-subtle">•••••• (hidden for security)</span><span x-show="!detail.has_refresh_token">—</span></dd>
+                <dt>ID Token</dt><dd><span x-show="detail.has_id_token" class="text-subtle">•••••• (hidden for security)</span><span x-show="!detail.has_id_token">—</span></dd>
               </dl>
             </div>
           </template>

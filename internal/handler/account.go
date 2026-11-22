@@ -131,7 +131,12 @@ func accountFromRequest(r AccountRequest) repository.Account {
 }
 
 func toAccountResponse(item repository.Account) AccountResponse {
-	return AccountResponse{AccountRequest: AccountRequest{AccessToken: item.AccessToken, RefreshToken: item.RefreshToken, IDToken: item.IDToken, Email: item.Email, UserID: item.UserID, AccountID: item.AccountID, Type: item.Type, IsCodex: item.IsCodex, Status: item.Status, Quota: item.Quota, Proxy: item.Proxy, Remaining: item.Remaining, ResetAfter: item.ResetAfter, Success: item.Success, Fail: item.Fail, LastUsedAt: item.LastUsedAt, LastRefreshAt: item.LastRefreshAt, LastError: item.LastError, CreatedAt: item.CreatedAt}, ImageInflight: item.ImageInflight}
+	// The long-lived refresh_token and id_token are never sent back by the panel
+	// (UpdateAccountRequest carries only type/status/quota/proxy), so we strip them
+	// from the response and expose only a has_* flag. access_token stays because the
+	// panel uses it as the account identifier for update/delete/quota calls.
+	response := AccountResponse{AccountRequest: AccountRequest{AccessToken: item.AccessToken, Email: item.Email, UserID: item.UserID, AccountID: item.AccountID, Type: item.Type, IsCodex: item.IsCodex, Status: item.Status, Quota: item.Quota, Proxy: item.Proxy, Remaining: item.Remaining, ResetAfter: item.ResetAfter, Success: item.Success, Fail: item.Fail, LastUsedAt: item.LastUsedAt, LastRefreshAt: item.LastRefreshAt, LastError: item.LastError, CreatedAt: item.CreatedAt}, ImageInflight: item.ImageInflight, HasRefreshToken: item.RefreshToken != "", HasIDToken: item.IDToken != ""}
+	return response
 }
 
 func intQuery(value string, fallback int) int {
@@ -171,7 +176,9 @@ type AccountRequest struct {
 // AccountResponse is the account representation returned by the API.
 type AccountResponse struct {
 	AccountRequest
-	ImageInflight int `json:"image_inflight"`
+	ImageInflight   int  `json:"image_inflight"`
+	HasRefreshToken bool `json:"has_refresh_token"`
+	HasIDToken      bool `json:"has_id_token"`
 }
 
 // DeleteAccountsRequest contains the access tokens of accounts to remove.
