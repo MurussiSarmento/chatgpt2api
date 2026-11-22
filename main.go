@@ -73,6 +73,9 @@ func main() {
 	handler.NewCatalogHandler(catalogService, cfg).RegisterRoutes(v1)
 	handler.NewAIHandler(aiService, logService).RegisterRoutes(v1)
 	handler.NewAudioHandler(audioService, logService).RegisterRoutes(v1)
+	if vetaToken := os.Getenv("VETA_TOKEN"); vetaToken != "" {
+		handler.NewVetaHandler(vetaToken).RegisterRoutes(v1)
+	}
 	engine.NoRoute(handler.Static("web"))
 	repo.FailRunningTasks(context.Background(), time.Now().UTC())
 	repo.ResetAccountImageInflight(context.Background())
