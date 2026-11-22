@@ -771,6 +771,13 @@ Alpine.data("chat", () => {
 
     send() {
       if (!this.canSend) return;
+      // Route Veta/Artistly models to the correct handler regardless of
+      // active tab so stale model names never leak into the chat pipeline.
+      const vetaVideoModels = ["veo_3_1", "omni_flash"];
+      const vetaImageModels = ["nano_banana_pro", "nano_banana_fast"];
+      if (vetaVideoModels.includes(this.model)) return this.runVideoTurn(this.input, this.model, this.videoSettings, this.images);
+      if (vetaImageModels.includes(this.model)) return this.runImageTurn(this.input, this.model, this.settings, this.images);
+      if (this.mode === "video") return this.runVideoTurn(this.input, this.model, this.videoSettings, this.images);
       if (this.mode === "image") return this.runImageTurn(this.input, this.model, this.settings, this.images);
       if (this.type === "speech") return this.sendSpeech();
       if (this.type === "transcription") return this.sendTranscription();
