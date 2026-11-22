@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"slices"
 
 	"github.com/basketikun/chatgpt2api/internal/config"
 	"github.com/basketikun/chatgpt2api/internal/service"
@@ -54,6 +55,21 @@ func CORS(c *gin.Context) {
 func identity(c *gin.Context) service.Identity {
 	value, _ := c.Get("identity")
 	return value.(service.Identity)
+}
+
+// allowVeta reports whether the caller may use Veta IA endpoints: the admin key
+// always may; a user API key must carry the "veta" route.
+func allowVeta(id service.Identity) bool {
+	return id.Role == "admin" || slices.Contains(id.Routes, "veta")
+}
+
+// requireVeta aborts with 403 unless the caller is allowed to use Veta.
+func requireVeta(c *gin.Context) bool {
+	if allowVeta(identity(c)) {
+		return true
+	}
+	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"detail": gin.H{"error": "this key is not allowed to use Veta IA; add the 'veta' route to the key"}})
+	return false
 }
 
 func writeResult(c *gin.Context, value any, err error) {

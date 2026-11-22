@@ -19,16 +19,19 @@ import (
 
 	"github.com/basketikun/chatgpt2api/internal/protocol"
 	"github.com/basketikun/chatgpt2api/internal/service"
+	upstream "github.com/basketikun/chatgpt2api/internal/upstream"
 	"github.com/gin-gonic/gin"
 )
 
 type AIHandler struct {
-	service *service.AIService
-	logs    *service.LogService
+	service  *service.AIService
+	logs     *service.LogService
+	veta     *service.VetaService
+	artistly *service.ArtistlyService
 }
 
-func NewAIHandler(ai *service.AIService, logs *service.LogService) *AIHandler {
-	return &AIHandler{service: ai, logs: logs}
+func NewAIHandler(ai *service.AIService, logs *service.LogService, veta *service.VetaService, artistly *service.ArtistlyService) *AIHandler {
+	return &AIHandler{service: ai, logs: logs, veta: veta, artistly: artistly}
 }
 func (h *AIHandler) RegisterRoutes(router *gin.RouterGroup) {
 	router.POST("/images/generations", h.images)
@@ -478,6 +481,31 @@ func (h *AIHandler) images(c *gin.Context) {
 		summary = "Image edit"
 	}
 	callLog := h.logs.NewCallLog(identity(c), c.Request.URL.Path, request.Model, summary, request.Prompt, time.Now())
+	if h.veta != nil && isVetaImageModel(request.Model) {
+		if !requireVeta(c) {
+			return
+		}
+		result, err := h.veta.Image(c.Request.Context(), request.Prompt, vetaImageModel(request.Model), aspectFromSize(request.Size), "", requestBaseURL(c))
+		if err != nil {
+			callLog.Save("Call failed", "failed", map[string]any{"error": err.Error()})
+			writeImageError(c, err)
+			return
+		}
+		callLog.Save("Call completed", "success", map[string]any{"urls": []string{result.URL}})
+		c.JSON(http.StatusOK, gin.H{"created": time.Now().Unix(), "model": request.Model, "data": []any{gin.H{"revised_prompt": result.RevisedPrompt, "url": result.URL}}})
+		return
+	}
+	if h.artistly != nil && upstream.IsArtistlyModel(request.Model) {
+		result, err := h.artistly.Image(c.Request.Context(), request.Prompt, request.Model, request.Quality, artistlyAspectFromSize(request.Size), request.Count, requestBaseURL(c))
+		if err != nil {
+			callLog.Save("Call failed", "failed", map[string]any{"error": err.Error()})
+			writeImageError(c, err)
+			return
+		}
+		callLog.Save("Call completed", "success", map[string]any{"urls": []string{result.URL}})
+		c.JSON(http.StatusOK, gin.H{"created": time.Now().Unix(), "model": request.Model, "data": []any{gin.H{"revised_prompt": result.RevisedPrompt, "url": result.URL}}})
+		return
+	}
 	results, err := h.service.Images(c.Request.Context(), request, callLog)
 	if err != nil {
 		writeImageError(c, err)
@@ -1056,6 +1084,24 @@ func imageModalityRequested(value any) bool {
 		}
 	}
 	return false
+}
+
+// vetaImageModels lists the model names that route to Veta IA for image
+// generation. Keep in sync with the models advertised by the catalog handler.
+var vetaImageModels = map[string]bool{
+	"nano_banana_pro":  true,
+	"nano_banana_fast": true,
+}
+
+func isVetaImageModel(model string) bool {
+	return vetaImageModels[model]
+}
+
+// vetaImageModel normalises the incoming model name to the identifier expected
+// by the Veta MCP tool. Unknown names pass through unchanged so new models do
+// not require a code change.
+func vetaImageModel(model string) string {
+	return model
 }
 
 func writeImageError(c *gin.Context, err error) {

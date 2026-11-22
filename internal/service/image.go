@@ -44,9 +44,16 @@ func NewImageService(repo *repository.Repository, config *config.Config) *ImageS
 }
 
 func (s *ImageService) Save(ctx context.Context, data []byte, baseURL string) (StoredImage, error) {
+	return s.SaveMedia(ctx, data, baseURL, ".png", "image/png", "image")
+}
+
+// SaveMedia persists arbitrary media (image or video) to local/WebDAV storage
+// and records it in the files table. ext includes the leading dot (".png",
+// ".mp4"); kind is "image" or "video".
+func (s *ImageService) SaveMedia(ctx context.Context, data []byte, baseURL string, ext string, contentType string, kind string) (StoredImage, error) {
 	digest := md5.Sum(data)
 	now := time.Now()
-	rel := filepath.ToSlash(filepath.Join(now.Format("2006"), now.Format("01"), now.Format("02"), strconvTime(now)+"_"+hex.EncodeToString(digest[:])+".png"))
+	rel := filepath.ToSlash(filepath.Join(now.Format("2006"), now.Format("01"), now.Format("02"), strconvTime(now)+"_"+hex.EncodeToString(digest[:])+ext))
 	settings := s.config.Image.Storage
 	local, webdav := settings.Mode != "webdav", settings.Enabled && (settings.Mode == "webdav" || settings.Mode == "both")
 	remote := ""
@@ -80,7 +87,7 @@ func (s *ImageService) Save(ctx context.Context, data []byte, baseURL string) (S
 	if local && webdav {
 		storage = "both"
 	}
-	item := repository.File{Path: rel, Kind: "image", Name: filepath.Base(rel), Date: now.Format("2006-01-02"), Size: int64(len(data)), ContentType: "image/png", Storage: storage, Local: local, WebDAV: webdav, RemoteURL: remote, Width: width, Height: height, CreatedAt: now.Format("2006-01-02 15:04:05")}
+	item := repository.File{Path: rel, Kind: kind, Name: filepath.Base(rel), Date: now.Format("2006-01-02"), Size: int64(len(data)), ContentType: contentType, Storage: storage, Local: local, WebDAV: webdav, RemoteURL: remote, Width: width, Height: height, CreatedAt: now.Format("2006-01-02 15:04:05")}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.repo.SaveFile(ctx, item); err != nil {
@@ -156,7 +163,7 @@ func (s *ImageService) LocalPath(rel string) (string, error) {
 func (s *ImageService) List(ctx context.Context, baseURL string, query string, startDate string, endDate string) ([]map[string]any, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	items, err := s.repo.Files(ctx, "image")
+	items, err := s.repo.Files(ctx, "")
 	if err != nil {
 		return nil, err
 	}
@@ -576,7 +583,7 @@ func isImagePath(path string) bool {
 		return false
 	}
 	switch strings.ToLower(filepath.Ext(name)) {
-	case ".png", ".jpg", ".jpeg", ".webp":
+	case ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm", ".mov":
 		return true
 	default:
 		return false

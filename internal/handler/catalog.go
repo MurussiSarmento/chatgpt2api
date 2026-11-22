@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/basketikun/chatgpt2api/internal/config"
@@ -34,6 +35,13 @@ func (h *CatalogHandler) list(c *gin.Context) {
 			item["type"] = "image"
 		}
 		data = append(data, item)
+	}
+	// Advertise Veta IA image models when a token is configured so the
+	// frontend can offer them in the image-generation picker.
+	if os.Getenv("VETA_TOKEN") != "" {
+		for _, model := range []string{"nano_banana_pro", "nano_banana_fast"} {
+			data = append(data, gin.H{"id": model, "object": "model", "created": 0, "owned_by": "veta-ia", "permission": []any{}, "root": model, "parent": nil, "type": "image"})
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"object": "list", "data": data})
 }

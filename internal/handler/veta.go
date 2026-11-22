@@ -6,18 +6,18 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/basketikun/chatgpt2api/internal/upstream"
+	"github.com/basketikun/chatgpt2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
 // VetaHandler exposes Veta IA video generation. It is only registered when a
 // VETA_TOKEN is configured, so it adds no surface when Veta is disabled.
 type VetaHandler struct {
-	client *upstream.VetaClient
+	veta *service.VetaService
 }
 
-func NewVetaHandler(token string) *VetaHandler {
-	return &VetaHandler{client: upstream.NewVetaClient(token)}
+func NewVetaHandler(veta *service.VetaService) *VetaHandler {
+	return &VetaHandler{veta: veta}
 }
 
 func (h *VetaHandler) RegisterRoutes(router *gin.RouterGroup) {
@@ -25,6 +25,9 @@ func (h *VetaHandler) RegisterRoutes(router *gin.RouterGroup) {
 }
 
 func (h *VetaHandler) videos(c *gin.Context) {
+	if !requireVeta(c) {
+		return
+	}
 	var body map[string]any
 	if err := c.ShouldBindJSON(&body); err != nil {
 		writeError(c, http.StatusBadRequest, err)
@@ -47,19 +50,15 @@ func (h *VetaHandler) videos(c *gin.Context) {
 	duration := durationField(body)
 	startImage := firstStringField(body, "image_url", "image", "start_image_url")
 
-	media, err := h.client.GenerateVideo(c.Request.Context(), prompt, model, aspect, quality, duration, startImage)
+	url, err := h.veta.Video(c.Request.Context(), prompt, model, aspect, quality, duration, startImage, requestBaseURL(c))
 	if err != nil {
 		writeError(c, http.StatusBadGateway, err)
 		return
 	}
-	item := gin.H{"url": media.URL}
-	if media.DownloadURL != "" {
-		item["download_url"] = media.DownloadURL
-	}
 	c.JSON(http.StatusOK, gin.H{
 		"created": time.Now().Unix(),
-		"model":   firstNonEmpty(media.Model, model),
-		"data":    []any{item},
+		"model":   model,
+		"data":    []any{gin.H{"url": url}},
 	})
 }
 
@@ -84,15 +83,6 @@ func stringField(body map[string]any, key string) string {
 func firstStringField(body map[string]any, keys ...string) string {
 	for _, key := range keys {
 		if value, ok := body[key].(string); ok && value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
 			return value
 		}
 	}
