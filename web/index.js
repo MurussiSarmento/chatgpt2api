@@ -511,9 +511,10 @@ const fromUrl = async (url, name) => ({ id: crypto.randomUUID(), name, url, file
 const creationModes = [
   { value: "chat", label: "Chat", icon: "message-circle", types: ["chat"] },
   { value: "image", label: "Image", icon: "image", types: ["image"] },
+  { value: "video", label: "Video", icon: "video", types: ["video"] },
   { value: "voice", label: "Voice", icon: "audio-lines", types: ["speech", "transcription"] },
 ];
-const recordIcons = { chat: "message-circle", image: "image", speech: "audio-lines", transcription: "mic" };
+const recordIcons = { chat: "message-circle", image: "image", video: "video", speech: "audio-lines", transcription: "mic" };
 
 Alpine.data("chat", () => {
   const retrying = new Set();
@@ -553,6 +554,7 @@ Alpine.data("chat", () => {
     recording: false,
     quota: null,
     settings: { ratio: "1:1", count: 1 },
+    videoSettings: { ratio: "16:9", duration: 8 },
     input: "",
     images: [],
     loading: false,
@@ -600,12 +602,13 @@ Alpine.data("chat", () => {
     get canSend() {
       if (this.loading) return false;
       if (this.mode === "chat") return this.input || this.images.length;
+      if (this.mode === "video") return this.input;
       if (this.type === "transcription") return Boolean(this.audio);
       return this.input;
     },
 
     get placeholder() {
-      return { chat: this.webSearch ? "Search the web and ask" : "Enter a question", image: this.images.length ? "Describe how to edit the reference image" : "Describe the image you want to generate", speech: "Enter the text to synthesize" }[this.type];
+      return { chat: this.webSearch ? "Search the web and ask" : "Enter a question", image: this.images.length ? "Describe how to edit the reference image" : "Describe the image you want to generate", video: this.images.length ? "Describe how to animate this image" : "Describe the video you want to generate", speech: "Enter the text to synthesize" }[this.type];
     },
 
     get settingsLabel() {
@@ -619,10 +622,56 @@ Alpine.data("chat", () => {
 
     setType(type) {
       this.type = type;
-      this.model = type === "image" ? this.imageModels[0] : "auto";
+      this.model = type === "image" ? this.imageModels[0] : type === "video" ? "veo_3_1" : "auto";
       this.webSearch = false;
       this.error = "";
       if (this.mode === "voice") this.images = [];
+    },
+
+    async send() {
+      if (!this.canSend) return;
+      if (this.mode === "chat") return this.runChatTurn(this.input, this.model, this.effort, this.webSearch, this.images);
+      if (this.mode === "image") return this.runImageTurn(this.input, this.model, this.settings, this.images);
+      if (this.mode === "video") return this.runVideoTurn(this.input, this.model, this.videoSettings, this.images);
+      if (this.type === "speech") return this.runSpeechTurn(this.input, this.voice, this.format);
+      if (this.type === "transcription") return this.runTranscriptionTurn(this.audio);
+    },
+
+    /** Submit a video generation request via Veta. Supports text-to-video and image-to-video (animate). */
+    async runVideoTurn(prompt, model, settings, refs) {
+      const turn = { prompt, model, settings: { ...settings }, references: refs.map(({ id, name, url }) => ({ id, name, url })) };
+      this.loading = true;
+      this.error = "";
+      let id, base;
+      try {
+        ({ id, messages: base } = await this.begin("video", model, prompt, userContent(prompt, refs), { video_settings: turn.settings }));
+        this.input = "";
+        this.images = [];
+        const body = { prompt, model, aspect_ratio: settings.ratio, duration: String(settings.duration) };
+        if (refs.length) body.image_url = refs[0].url;
+        const result = await api("/v1/videos/generations", { method: "POST", body });
+        const videoUrl = result.data?.[0]?.url;
+        if (!videoUrl) throw new Error("No video URL returned");
+        const part = { type: "video_result", url: videoUrl, model, ratio: settings.ratio, duration: settings.duration };
+        const assistant = { role: "assistant", content: [part], video_turn: turn };
+        await this.save(id, { messages: [...base, assistant] });
+      } catch (error) {
+        this.error = error.message;
+        if (id) {
+          const errorPart = { type: "video_result", status: "error", error: error.message, model, ratio: settings.ratio };
+          await this.save(id, { messages: [...base, { role: "assistant", content: [errorPart], video_turn: turn }] });
+        }
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    /** Animate an existing image: switch to video mode, pre-fill the image as reference. */
+    animateImage(url, name) {
+      this.setMode("video");
+      this.images = [{ id: crypto.randomUUID(), name: name || "reference.png", url, file: null }];
+      this.input = "";
+      this.error = "";
     },
 
     async select(id) {

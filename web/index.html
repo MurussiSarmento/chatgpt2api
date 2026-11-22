@@ -353,6 +353,7 @@
                               <template x-if="part.status === 'success'">
                                 <div class="row row-xs">
                                   <button type="button" class="btn btn-ghost btn-xs btn-square btn-plain tooltip" data-tip="Add to edit" aria-label="Add to edit" @click="addToEdit(part.url, 'image-' + part.index + '.png', message.image_turn)"><ui-icon name="image-plus" class="icon-sm"></ui-icon></button>
+                                  <button type="button" class="btn btn-ghost btn-xs btn-square btn-plain tooltip" data-tip="Animate this image" aria-label="Animate this image" @click="animateImage(part.url, 'image-' + part.index + '.png')"><ui-icon name="video" class="icon-sm"></ui-icon></button>
                                   <a class="btn btn-ghost btn-xs btn-square btn-plain tooltip" data-tip="Download" aria-label="Download" :href="part.url" :download="'image-' + part.index + '.png'"><ui-icon name="download" class="icon-sm"></ui-icon></a>
                                 </div>
                               </template>
@@ -369,6 +370,29 @@
                       </template>
                     </div>
 
+                    <div class="chat-tasks" x-show="parts(message, 'video_result').length">
+                      <template x-for="part in parts(message, 'video_result')" :key="part.url || part.error">
+                        <div class="chat-task">
+                          <div class="chat-task-media" :class="{ 'chat-task-loading': !part.url && !part.error }" :style="{ aspectRatio: (part.ratio || '16:9').replace(':', ' / ') }">
+                            <template x-if="part.url">
+                              <video controls preload="metadata" class="chat-result-video" :src="part.url"></video>
+                            </template>
+                            <template x-if="part.status === 'error'">
+                              <div class="chat-task-state">
+                                <ui-icon name="triangle-alert" class="icon-lg text-danger"></ui-icon>
+                                <span class="text-strong">Video generation failed</span>
+                                <span class="text-xs text-danger" x-text="part.error"></span>
+                              </div>
+                            </template>
+                          </div>
+                          <div class="chat-task-foot row row-between" x-show="part.url">
+                            <span class="text-xs text-muted num" x-text="part.model + ' · ' + (part.ratio || '16:9') + ' · ' + (part.duration || '?') + 's'"></span>
+                            <a class="btn btn-ghost btn-xs btn-square btn-plain tooltip" data-tip="Download" aria-label="Download" :href="part.url" download><ui-icon name="download" class="icon-sm"></ui-icon></a>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+
                     <div class="markdown chat-markdown" x-show="text(message)" x-html="$md(text(message))"></div>
                   </div>
                 </template>
@@ -380,8 +404,8 @@
 
         <div class="chat-dock" :class="{ 'chat-dock-center': !messages.length }">
           <div class="chat-hero" x-show="!messages.length">
-            <h1 class="chat-hero-title" x-text="{ chat: 'What would you like to chat about today?', image: 'Turn ideas into images', voice: 'Convert between text and voice' }[mode]"></h1>
-            <p class="chat-hero-sub" x-text="{ chat: 'Ask questions, search the web, or upload images with your question', image: 'Describe the image you want, or add reference images to edit', voice: 'Synthesize natural speech, or transcribe audio into text' }[mode]"></p>
+            <h1 class="chat-hero-title" x-text="{ chat: 'What would you like to chat about today?', image: 'Turn ideas into images', video: 'Generate videos from text or animate images', voice: 'Convert between text and voice' }[mode]"></h1>
+            <p class="chat-hero-sub" x-text="{ chat: 'Ask questions, search the web, or upload images with your question', image: 'Describe the image you want, or add reference images to edit', video: 'Describe a scene to generate, or attach an image to animate it', voice: 'Synthesize natural speech, or transcribe audio into text' }[mode]"></p>
           </div>
 
           <div role="alert" class="alert alert-soft alert-error" x-show="error" x-cloak>
@@ -477,6 +501,40 @@
                       </div>
                     </div>
                     <span class="row row-xs text-xs text-muted tooltip" data-tip="Remaining image quota across available accounts" x-show="$store.app.admin"><ui-icon name="coins" class="icon-sm"></ui-icon>Remaining <span class="num" x-text="quota === null ? '—' : $num(quota)"></span></span>
+                  </div>
+                </template>
+
+                <template x-if="mode === 'video'">
+                  <div class="row row-xs row-wrap">
+                    <ui-select variant="ghost" icon="video" aria-label="Model" x-model="model">
+                      <option value="veo_3_1">Veo 3.1</option>
+                      <option value="omni_flash">Omni Flash</option>
+                    </ui-select>
+                    <div class="chat-pop-wrap" x-data="{ open: false }" @click.outside="open = false" @keydown.escape="open = false">
+                      <button type="button" class="btn btn-ghost btn-xs" :aria-expanded="open" @click="open = !open"><ui-icon name="sliders-horizontal" class="icon-sm"></ui-icon><span x-text="videoSettings.ratio + ' · ' + videoSettings.duration + 's'"></span></button>
+                      <div class="chat-pop vstack" x-show="open" x-cloak x-transition.opacity>
+                        <div class="vstack vstack-sm">
+                          <span class="field-label">Aspect ratio</span>
+                          <div class="chat-options">
+                            <template x-for="item in [['16:9','16','9'],['9:16','9','16'],['1:1','1','1']]" :key="item[0]">
+                              <button type="button" class="btn btn-ghost chat-ratio" :class="{ 'chat-ratio-active': videoSettings.ratio === item[0] }" @click="videoSettings.ratio = item[0]">
+                                <span class="chat-ratio-box"><span class="chat-ratio-shape" :style="{ aspectRatio: item[1] + '/' + item[2], [item[1] >= item[2] ? 'width' : 'height']: '100%' }"></span></span>
+                                <span x-text="item[0]"></span>
+                              </button>
+                            </template>
+                          </div>
+                        </div>
+                        <div class="chat-pop-row">
+                          <span class="field-label">Duration</span>
+                          <div class="tabs tabs-box tabs-sm" role="tablist">
+                            <template x-for="d in [5,8,10]" :key="d">
+                              <button type="button" role="tab" class="tab" :class="{ 'tab-active': videoSettings.duration === d }" x-text="d + 's'" @click="videoSettings.duration = d"></button>
+                            </template>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <span class="text-xs text-muted" x-show="images.length"><ui-icon name="image" class="icon-sm"></ui-icon>Animating reference image</span>
                   </div>
                 </template>
 
