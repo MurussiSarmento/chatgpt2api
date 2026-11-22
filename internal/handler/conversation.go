@@ -12,7 +12,7 @@ import (
 
 type ConversationHandler struct{ service *service.ConversationService }
 
-var conversationTypes = map[string]bool{"chat": true, "image": true, "speech": true, "transcription": true}
+var conversationTypes = map[string]bool{"chat": true, "image": true, "video": true, "speech": true, "transcription": true}
 
 func NewConversationHandler(service *service.ConversationService) *ConversationHandler {
 	return &ConversationHandler{service: service}
