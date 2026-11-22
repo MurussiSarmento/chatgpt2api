@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net"
@@ -79,6 +80,15 @@ func (h *AIHandler) chat(c *gin.Context) {
 	includeUsage := false
 	if options, ok := body["stream_options"].(map[string]any); ok {
 		includeUsage, _ = options["include_usage"].(bool)
+	}
+	// Reject Veta and Artistly models on the chat endpoint: they are media-
+	// generation-only and must go through /v1/images/generations or
+	// /v1/videos/generations. Without this guard the model name leaks into
+	// TextTokenForModel and produces a misleading "not available to any
+	// active account" error.
+	if isVetaImageModel(model) || upstream.IsArtistlyModel(model) || model == "veo_3_1" || model == "omni_flash" {
+		writeError(c, http.StatusBadRequest, fmt.Errorf("model %q is a media-generation model; use the Image or Video tab instead of Chat", model))
+		return
 	}
 	requestData, _ := json.Marshal(messages)
 	callLog := h.logs.NewCallLog(identity(c), c.Request.URL.Path, model, "Text generation", string(requestData), time.Now())
