@@ -7,6 +7,7 @@ import (
 
 	"github.com/basketikun/chatgpt2api/internal/config"
 	"github.com/basketikun/chatgpt2api/internal/service"
+	upstream "github.com/basketikun/chatgpt2api/internal/upstream"
 	"github.com/gin-gonic/gin"
 )
 
@@ -41,6 +42,13 @@ func (h *CatalogHandler) list(c *gin.Context) {
 	if os.Getenv("VETA_TOKEN") != "" {
 		for _, model := range []string{"nano_banana_pro", "nano_banana_fast"} {
 			data = append(data, gin.H{"id": model, "object": "model", "created": 0, "owned_by": "veta-ia", "permission": []any{}, "root": model, "parent": nil, "type": "image"})
+		}
+	}
+	// Advertise Artistly image models when an API key is configured.
+	// Models map to AI Image Designer v6 categories per the mapping document.
+	if os.Getenv("ARTISTLY_API_KEY") != "" {
+		for _, model := range upstream.ArtistlyImageModels() {
+			data = append(data, gin.H{"id": model, "object": "model", "created": 0, "owned_by": "artistly", "permission": []any{}, "root": model, "parent": nil, "type": "image"})
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"object": "list", "data": data})

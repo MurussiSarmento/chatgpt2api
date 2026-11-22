@@ -73,9 +73,13 @@ func main() {
 	if vetaToken := os.Getenv("VETA_TOKEN"); vetaToken != "" {
 		vetaService = service.NewVetaService(vetaToken, imageService)
 	}
+	var artistlyService *service.ArtistlyService
+	if artistlyKey := os.Getenv("ARTISTLY_API_KEY"); artistlyKey != "" {
+		artistlyService = service.NewArtistlyService(artistlyKey, imageService)
+	}
 	v1 := engine.Group("/v1", identity)
 	handler.NewCatalogHandler(catalogService, cfg).RegisterRoutes(v1)
-	handler.NewAIHandler(aiService, logService, vetaService).RegisterRoutes(v1)
+	handler.NewAIHandler(aiService, logService, vetaService, artistlyService).RegisterRoutes(v1)
 	handler.NewAudioHandler(audioService, logService).RegisterRoutes(v1)
 	if vetaService != nil {
 		handler.NewVetaHandler(vetaService).RegisterRoutes(v1)

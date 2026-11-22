@@ -1086,6 +1086,37 @@ func imageModalityRequested(value any) bool {
 	return false
 }
 
+// artistlyAspectFromSize maps an OpenAI-style WxH size to Artistly's aspect
+// ratio identifiers documented in the mapping §AI Image Designer v6.
+func artistlyAspectFromSize(size string) string {
+	switch size {
+	case "1024x1024":
+		return "1:1"
+	case "1344x768":
+		return "16:9"
+	case "1536x640":
+		return "21:9"
+	case "1216x832":
+		return "3:2"
+	case "832x1216":
+		return "2:3"
+	case "896x1088":
+		return "4:5"
+	case "1088x896":
+		return "5:4"
+	case "896x1152":
+		return "3:4"
+	case "1152x896":
+		return "4:3"
+	case "768x1344":
+		return "9:16"
+	case "640x1536":
+		return "9:21"
+	default:
+		return "1:1"
+	}
+}
+
 // vetaImageModels lists the model names that route to Veta IA for image
 // generation. Keep in sync with the models advertised by the catalog handler.
 var vetaImageModels = map[string]bool{
