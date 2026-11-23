@@ -628,25 +628,6 @@ Alpine.data("chat", () => {
       if (this.mode === "voice") this.images = [];
     },
 
-    async send() {
-      if (!this.canSend) return;
-      // If the current model is a Veta or Artistly model, always route to the
-      // correct handler regardless of the active tab. This prevents the user
-      // from accidentally sending a video/image request through the chat
-      // pipeline when they type a prompt after clicking "Animate" or selecting
-      // a Veta model without switching tabs first.
-      const vetaModels = ["veo_3_1", "omni_flash", "nano_banana_pro", "nano_banana_fast"];
-      if (vetaModels.includes(this.model)) {
-        if (["veo_3_1", "omni_flash"].includes(this.model)) return this.runVideoTurn(this.input, this.model, this.videoSettings, this.images);
-        return this.runImageTurn(this.input, this.model, this.settings, this.images);
-      }
-      if (this.mode === "chat") return this.runChatTurn(this.input, this.model, this.effort, this.webSearch, this.images);
-      if (this.mode === "image") return this.runImageTurn(this.input, this.model, this.settings, this.images);
-      if (this.mode === "video") return this.runVideoTurn(this.input, this.model, this.videoSettings, this.images);
-      if (this.type === "speech") return this.runSpeechTurn(this.input, this.voice, this.format);
-      if (this.type === "transcription") return this.runTranscriptionTurn(this.audio);
-    },
-
     /** Submit a video generation request via Veta. Supports text-to-video and image-to-video (animate). */
     async runVideoTurn(prompt, model, settings, refs) {
       const turn = { prompt, model, settings: { ...settings }, references: refs.map(({ id, name, url }) => ({ id, name, url })) };
