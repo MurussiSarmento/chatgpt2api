@@ -47,12 +47,17 @@ func main() {
 	audioService := service.NewAudioService(accountService, logService, proxyService, cfg)
 	authService := service.NewAuthService(repo, cfg.APIKey)
 	var vetaService *service.VetaService
+	var vetaImageService *service.ImageService
 	if vetaToken := os.Getenv("VETA_TOKEN"); vetaToken != "" {
-		vetaService = service.NewVetaService(vetaToken, imageService)
+		vetaImageService = service.NewImageService(repo, cfg) // Shared image service for Veta
+		vetaService = service.NewVetaService(vetaToken, vetaImageService)
 	}
 	var artistlyService *service.ArtistlyService
-	if artistlyKey := os.Getenv("ARTISTLY_API_KEY"); artistlyKey != "" {
-		artistlyService = service.NewArtistlyService(artistlyKey, imageService)
+	var artistlyImageService *service.ImageService
+	if artistlyEmail := os.Getenv("ARTISTLY_EMAIL"); artistlyEmail != "" {
+		artistlyPassword := os.Getenv("ARTISTLY_PASSWORD")
+		artistlyImageService = service.NewImageService(repo, cfg) // Separate image service for Artistly
+		artistlyService = service.NewArtistlyService(artistlyEmail, artistlyPassword, artistlyImageService)
 	}
 	taskService := service.NewTaskService(repo, aiService, vetaService, artistlyService, cfg)
 	authHandler := handler.NewAuthHandler(authService, cfg.Version)

@@ -46,7 +46,7 @@ func (h *CatalogHandler) list(c *gin.Context) {
 	}
 	// Advertise Artistly image models when an API key is configured.
 	// Models map to AI Image Designer v6 categories per the mapping document.
-	if os.Getenv("ARTISTLY_API_KEY") != "" {
+	if os.Getenv("ARTISTLY_EMAIL") != "" {
 		for _, model := range upstream.ArtistlyImageModels() {
 			data = append(data, gin.H{"id": model, "object": "model", "created": 0, "owned_by": "artistly", "permission": []any{}, "root": model, "parent": nil, "type": "image"})
 		}
