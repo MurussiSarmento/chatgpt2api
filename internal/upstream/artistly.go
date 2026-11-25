@@ -163,9 +163,16 @@ func (a *ArtistlyClient) ensureSession(ctx context.Context) error {
 		return fmt.Errorf("artistly: login failed with status %d", resp.StatusCode)
 	}
 
-	// Update cookies from login response (session may have changed)
+	// Update cookies from login response (session may have changed). Laravel
+	// rotates the XSRF-TOKEN on login, so refresh the stored token from the
+	// response — sending the pre-login token with the new session yields 419.
 	for _, c := range resp.Cookies() {
 		a.setCookie(c)
+		if c.Name == "XSRF-TOKEN" {
+			if decoded, err := url.QueryUnescape(c.Value); err == nil && decoded != "" {
+				a.xsrf = decoded
+			}
+		}
 	}
 
 	// Verify authentication by checking redirect or response
