@@ -1,3 +1,4 @@
+# cache-bust: 2026-11-25-go124-fix
 FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS build
 
 ARG TARGETOS
