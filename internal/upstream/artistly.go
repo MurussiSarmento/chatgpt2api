@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 const (
@@ -320,75 +322,176 @@ func (a *ArtistlyClient) generateImageOnce(ctx context.Context, prompt, category
 	return a.pollForDesign(ctx, prompt)
 }
 
-// pollForDesign scrapes the personal-designs page for newly generated CDN
-// image URLs. Artistly loads designs asynchronously via Pusher/WebSocket, so
-// there is no reliable REST API to poll. Instead we fetch the full HTML page
-// periodically and look for CDN URLs that weren't present before generation
-// started. The first new URL is assumed to be the generated image.
+// pollForDesign connects to Artistly's Reverb WebSocket server and listens
+// for the DesignProcessed event on the design.{userId} channel. This is how
+// the frontend receives generated images — there is no REST API for it.
 func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (ArtistlyMedia, error) {
-	// Snapshot existing CDN URLs before polling so we can detect new ones
-	knownURLs, _ := a.scrapeDesignCDNURLs(ctx)
+	// Get user ID from the session by fetching dashboard props
+	userID, err := a.getUserID(ctx)
+	if err != nil {
+		return ArtistlyMedia{}, fmt.Errorf("artistly: failed to get user ID for WebSocket: %w", err)
+	}
 
+	wsURL := "wss://ws.artistly.ai/app/kb747pbueimelgd4?protocol=7&client=js&version=8.4.0"
+	channel := fmt.Sprintf("design.%s", userID)
+
+	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, nil)
+	if err != nil {
+		return ArtistlyMedia{}, fmt.Errorf("artistly: WebSocket dial failed: %w", err)
+	}
+	defer conn.Close()
+
+	// Wait for connection_established
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		return ArtistlyMedia{}, fmt.Errorf("artistly: WebSocket read failed: %w", err)
+	}
+	var connEvent map[string]json.RawMessage
+	if err := json.Unmarshal(msg, &connEvent); err != nil {
+		return ArtistlyMedia{}, fmt.Errorf("artistly: WebSocket parse failed: %w", err)
+	}
+
+	// Subscribe to the design channel
+	subscribeMsg, _ := json.Marshal(map[string]any{
+		"event": "pusher:subscribe",
+		"data":  map[string]string{"channel": channel},
+	})
+	if err := conn.WriteMessage(websocket.TextMessage, subscribeMsg); err != nil {
+		return ArtistlyMedia{}, fmt.Errorf("artistly: WebSocket subscribe failed: %w", err)
+	}
+
+	// Listen for DesignProcessed event with timeout
 	deadline := time.After(ArtistlyPollTimeout)
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
 			return ArtistlyMedia{}, ctx.Err()
 		case <-deadline:
 			return ArtistlyMedia{}, errors.New("artistly: timed out waiting for generated image")
-		case <-ticker.C:
+		default:
 		}
 
-		currentURLs, err := a.scrapeDesignCDNURLs(ctx)
+		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		_, msg, err := conn.ReadMessage()
 		if err != nil {
+			// Timeout or transient error — keep listening
 			continue
 		}
 
-		// Find URLs that are new since generation started
-		for u := range currentURLs {
-			if !knownURLs[u] {
-				return ArtistlyMedia{URL: u, Status: "completed"}, nil
+		var event map[string]json.RawMessage
+		if err := json.Unmarshal(msg, &event); err != nil {
+			continue
+		}
+
+		eventName, _ := event["event"]
+		var name string
+		json.Unmarshal(eventName, &name)
+
+		if name == "DesignProcessed" {
+			rawData, ok := event["data"]
+			if !ok {
+				continue
+			}
+			// Data may be a JSON-encoded string or an object
+			var dataBytes []byte
+			var dataStr string
+			if err := json.Unmarshal(rawData, &dataStr); err == nil {
+				dataBytes = []byte(dataStr)
+			} else {
+				dataBytes = rawData
+			}
+
+			var design map[string]any
+			if err := json.Unmarshal(dataBytes, &design); err != nil {
+				continue
+			}
+
+			imageURL := findDesignImageURL(design)
+			if imageURL != "" {
+				return ArtistlyMedia{URL: imageURL, Status: "completed"}, nil
 			}
 		}
 	}
 }
 
-// scrapeDesignCDNURLs fetches the personal-designs page and extracts all
-// CDN image URLs from the HTML. Returns a set of URLs found.
-func (a *ArtistlyClient) scrapeDesignCDNURLs(ctx context.Context) (map[string]bool, error) {
-	resp, err := a.doRequestWithCookies(ctx, http.MethodGet, artistlyBaseURL+"/personal-designs", nil, map[string]string{
+// getUserID fetches the authenticated user's ID from the dashboard page props.
+func (a *ArtistlyClient) getUserID(ctx context.Context) (string, error) {
+	resp, err := a.doRequestWithCookies(ctx, http.MethodGet, artistlyBaseURL+"/dashboard", nil, map[string]string{
 		"Accept": "text/html",
 	})
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("personal-designs returned status %d", resp.StatusCode)
-	}
-
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	urls := extractAllImageURLs(string(body))
-	result := make(map[string]bool, len(urls))
-	for _, u := range urls {
-		result[u] = true
+	re := regexp.MustCompile(`data-page="([^"]+)"`)
+	matches := re.FindStringSubmatch(string(body))
+	if len(matches) < 2 {
+		return "", errors.New("no data-page attribute found")
 	}
-	return result, nil
+	decoded := strings.ReplaceAll(matches[1], "&quot;", `"`)
+	decoded = strings.ReplaceAll(decoded, "&#34;", `"`)
+	var page map[string]any
+	if err := json.Unmarshal([]byte(decoded), &page); err != nil {
+		return "", err
+	}
+	props, _ := page["props"].(map[string]any)
+	if props == nil {
+		return "", errors.New("no props in data-page")
+	}
+	auth, _ := props["auth"].(map[string]any)
+	if auth == nil {
+		return "", errors.New("no auth in props")
+	}
+	user, _ := auth["user"].(map[string]any)
+	if user == nil {
+		return "", errors.New("no user in auth")
+	}
+	id := user["id"]
+	switch v := id.(type) {
+	case float64:
+		return fmt.Sprintf("%.0f", v), nil
+	case string:
+		return v, nil
+	default:
+		return fmt.Sprintf("%v", v), nil
+	}
 }
 
-// extractAllImageURLs finds all CDN image URLs in content. Unlike extractImageURL
-// which returns only the first match, this returns all matches.
-func extractAllImageURLs(content string) []string {
-	re := regexp.MustCompile(`https://cdn\.artistly\.ai/[^\s"'\\]+\.(?:png|jpg|jpeg|webp)`)
-	return re.FindAllString(content, -1)
+// findDesignImageURL extracts the first image URL from a DesignProcessed payload.
+func findDesignImageURL(design map[string]any) string {
+	// Check direct image_url field
+	if url, ok := design["image_url"].(string); ok && url != "" {
+		return url
+	}
+	// Check images array
+	if images, ok := design["images"].([]any); ok && len(images) > 0 {
+		if firstImage, ok := images[0].(map[string]any); ok {
+			if url, ok := firstImage["url"].(string); ok && url != "" {
+				return url
+			}
+			if url, ok := firstImage["image_url"].(string); ok && url != "" {
+				return url
+			}
+		}
+		if url, ok := images[0].(string); ok && url != "" {
+			return url
+		}
+	}
+	// Check thumbnail / preview fields
+	for _, key := range []string{"thumbnail", "preview", "preview_url", "cdn_url"} {
+		if url, ok := design[key].(string); ok && url != "" && strings.Contains(url, "cdn.artistly.ai") {
+			return url
+		}
+	}
+	// Last resort: search entire JSON for CDN URL
+	raw, _ := json.Marshal(design)
+	return extractImageURL(string(raw))
 }
 
 // ConnectionStatus verifies the session is valid by attempting login.
