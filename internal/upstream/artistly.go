@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -201,15 +202,20 @@ func (a *ArtistlyClient) ensureSession(ctx context.Context) error {
 // via the internal designs API. We follow the redirect, then poll the designs
 // API until the newest design appears with a CDN image URL.
 func (a *ArtistlyClient) GenerateImage(ctx context.Context, prompt, category, quality, aspectRatio string, count int, folder, visibility string) (ArtistlyMedia, error) {
+	log.Printf("[artistly] GenerateImage called: prompt=%q category=%q quality=%q aspect=%s count=%d", truncateString(prompt, 60), category, quality, aspectRatio, count)
 	// Retry once on session expiry (419/409/401)
 	for attempt := 0; attempt < 2; attempt++ {
+		log.Printf("[artistly] GenerateImage attempt %d/2", attempt+1)
 		media, err := a.generateImageOnce(ctx, prompt, category, quality, aspectRatio, count, folder, visibility)
 		if err == nil {
+			log.Printf("[artistly] GenerateImage succeeded: url=%s status=%s", truncateString(media.URL, 80), media.Status)
 			return media, nil
 		}
+		log.Printf("[artistly] GenerateImage attempt %d failed: %v", attempt+1, err)
 		// Only retry on session-related errors
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "session expired") || strings.Contains(errMsg, "status 419") || strings.Contains(errMsg, "status 409") || strings.Contains(errMsg, "status 401") {
+			log.Printf("[artistly] Session error detected, clearing state for retry")
 			a.mu.Lock()
 			a.loggedIn = false
 			a.xsrf = ""
@@ -225,9 +231,12 @@ func (a *ArtistlyClient) GenerateImage(ctx context.Context, prompt, category, qu
 
 // generateImageOnce performs one attempt at image generation + polling.
 func (a *ArtistlyClient) generateImageOnce(ctx context.Context, prompt, category, quality, aspectRatio string, count int, folder, visibility string) (ArtistlyMedia, error) {
+	log.Printf("[artistly] ensureSession starting")
 	if err := a.ensureSession(ctx); err != nil {
+		log.Printf("[artistly] ensureSession failed: %v", err)
 		return ArtistlyMedia{}, err
 	}
+	log.Printf("[artistly] ensureSession OK, xsrf=%s... version=%s", truncateString(a.xsrf, 20), a.version)
 
 	// Parse aspect ratio into width/height
 	width, height := artistlyAspectRatioToSize(aspectRatio)
@@ -289,23 +298,30 @@ func (a *ArtistlyClient) generateImageOnce(ctx context.Context, prompt, category
 	}
 	a.mu.Unlock()
 
+	log.Printf("[artistly] POSTing to store endpoint: %s", artistlyBaseURL+artistlyStorePath)
 	resp, err := a.doRequestWithCookies(ctx, http.MethodPost, artistlyBaseURL+artistlyStorePath, bytes.NewReader(body), headers)
 	if err != nil {
+		log.Printf("[artistly] store POST failed: %v", err)
 		return ArtistlyMedia{}, fmt.Errorf("artistly: generation request failed: %w", err)
 	}
 	defer resp.Body.Close()
+	log.Printf("[artistly] store POST response: status=%d content_length=%d", resp.StatusCode, resp.ContentLength)
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
+		log.Printf("[artistly] response read failed: %v", err)
 		return ArtistlyMedia{}, fmt.Errorf("artistly: response read failed: %w", err)
 	}
+	log.Printf("[artistly] response body length: %d bytes", len(respBody))
 
 	// Handle session expiry (409 = Inertia version mismatch, 401 = unauthenticated, 419 = CSRF)
 	if resp.StatusCode == http.StatusConflict || resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == 419 {
+		log.Printf("[artistly] session expired: status=%d body=%s", resp.StatusCode, truncateString(string(respBody), 200))
 		return ArtistlyMedia{}, fmt.Errorf("artistly: session expired (status %d)", resp.StatusCode)
 	}
 
 	if resp.StatusCode >= 400 {
+		log.Printf("[artistly] generation failed: status=%d body=%s", resp.StatusCode, truncateString(string(respBody), 200))
 		return ArtistlyMedia{}, fmt.Errorf("artistly: generation failed (status %d): %s", resp.StatusCode, truncateString(string(respBody), 500))
 	}
 
@@ -315,10 +331,12 @@ func (a *ArtistlyClient) generateImageOnce(ctx context.Context, prompt, category
 
 	// First try: check if the response body already contains a CDN URL (unlikely but possible)
 	if imageURL := extractImageURL(string(respBody)); imageURL != "" {
+		log.Printf("[artistly] found CDN URL directly in store response: %s", truncateString(imageURL, 80))
 		return ArtistlyMedia{URL: imageURL, Status: "completed"}, nil
 	}
 
-	// Poll the internal designs API for the newest design with our prompt
+	log.Printf("[artistly] no CDN URL in store response, starting WebSocket poll")
+	// Poll via Reverb WebSocket for the DesignProcessed event
 	return a.pollForDesign(ctx, prompt)
 }
 
@@ -326,28 +344,37 @@ func (a *ArtistlyClient) generateImageOnce(ctx context.Context, prompt, category
 // for the DesignProcessed event on the design.{userId} channel. This is how
 // the frontend receives generated images — there is no REST API for it.
 func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (ArtistlyMedia, error) {
+	log.Printf("[artistly] pollForDesign starting")
 	// Get user ID from the session by fetching dashboard props
 	userID, err := a.getUserID(ctx)
 	if err != nil {
+		log.Printf("[artistly] getUserID failed: %v", err)
 		return ArtistlyMedia{}, fmt.Errorf("artistly: failed to get user ID for WebSocket: %w", err)
 	}
+	log.Printf("[artistly] got userID=%s", userID)
 
 	wsURL := "wss://ws.artistly.ai/app/kb747pbueimelgd4?protocol=7&client=js&version=8.4.0"
 	channel := fmt.Sprintf("design.%s", userID)
+	log.Printf("[artistly] connecting to WebSocket: %s channel=%s", wsURL, channel)
 
 	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, nil)
 	if err != nil {
+		log.Printf("[artistly] WebSocket dial failed: %v", err)
 		return ArtistlyMedia{}, fmt.Errorf("artistly: WebSocket dial failed: %w", err)
 	}
 	defer conn.Close()
+	log.Printf("[artistly] WebSocket connected")
 
 	// Wait for connection_established
 	_, msg, err := conn.ReadMessage()
 	if err != nil {
+		log.Printf("[artistly] WebSocket initial read failed: %v", err)
 		return ArtistlyMedia{}, fmt.Errorf("artistly: WebSocket read failed: %w", err)
 	}
+	log.Printf("[artistly] received initial message: %s", truncateString(string(msg), 200))
 	var connEvent map[string]json.RawMessage
 	if err := json.Unmarshal(msg, &connEvent); err != nil {
+		log.Printf("[artistly] WebSocket parse failed: %v", err)
 		return ArtistlyMedia{}, fmt.Errorf("artistly: WebSocket parse failed: %w", err)
 	}
 
@@ -356,17 +383,23 @@ func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (Arti
 		"event": "pusher:subscribe",
 		"data":  map[string]string{"channel": channel},
 	})
+	log.Printf("[artistly] subscribing to channel: %s", channel)
 	if err := conn.WriteMessage(websocket.TextMessage, subscribeMsg); err != nil {
+		log.Printf("[artistly] WebSocket subscribe write failed: %v", err)
 		return ArtistlyMedia{}, fmt.Errorf("artistly: WebSocket subscribe failed: %w", err)
 	}
 
 	// Listen for DesignProcessed event with timeout
+	log.Printf("[artistly] listening for DesignProcessed events (timeout=%v)", ArtistlyPollTimeout)
 	deadline := time.After(ArtistlyPollTimeout)
+	msgCount := 0
 	for {
 		select {
 		case <-ctx.Done():
+			log.Printf("[artistly] context cancelled after %d messages", msgCount)
 			return ArtistlyMedia{}, ctx.Err()
 		case <-deadline:
+			log.Printf("[artistly] timed out after %d messages", msgCount)
 			return ArtistlyMedia{}, errors.New("artistly: timed out waiting for generated image")
 		default:
 		}
@@ -374,22 +407,28 @@ func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (Arti
 		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
+			log.Printf("[artistly] WebSocket read error (continuing): %v", err)
 			// Timeout or transient error — keep listening
 			continue
 		}
+		msgCount++
 
 		var event map[string]json.RawMessage
 		if err := json.Unmarshal(msg, &event); err != nil {
+			log.Printf("[artistly] message #%d unmarshal failed: %v", msgCount, err)
 			continue
 		}
 
 		eventName, _ := event["event"]
 		var name string
 		json.Unmarshal(eventName, &name)
+		log.Printf("[artistly] message #%d event=%s", msgCount, name)
 
 		if name == "DesignProcessed" {
+			log.Printf("[artistly] DesignProcessed received! raw=%s", truncateString(string(msg), 500))
 			rawData, ok := event["data"]
 			if !ok {
+				log.Printf("[artistly] DesignProcessed has no data field")
 				continue
 			}
 			// Data may be a JSON-encoded string or an object
@@ -403,95 +442,133 @@ func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (Arti
 
 			var design map[string]any
 			if err := json.Unmarshal(dataBytes, &design); err != nil {
+				log.Printf("[artistly] DesignProcessed data unmarshal failed: %v", err)
 				continue
 			}
 
 			imageURL := findDesignImageURL(design)
 			if imageURL != "" {
+				log.Printf("[artistly] found image URL from DesignProcessed: %s", truncateString(imageURL, 100))
 				return ArtistlyMedia{URL: imageURL, Status: "completed"}, nil
 			}
+			log.Printf("[artistly] DesignProcessed but no image URL found in design data")
 		}
 	}
 }
 
 // getUserID fetches the authenticated user's ID from the dashboard page props.
 func (a *ArtistlyClient) getUserID(ctx context.Context) (string, error) {
+	log.Printf("[artistly] getUserID: fetching dashboard page")
 	resp, err := a.doRequestWithCookies(ctx, http.MethodGet, artistlyBaseURL+"/dashboard", nil, map[string]string{
 		"Accept": "text/html",
 	})
 	if err != nil {
+		log.Printf("[artistly] getUserID: dashboard fetch failed: %v", err)
 		return "", err
 	}
 	defer resp.Body.Close()
+	log.Printf("[artistly] getUserID: dashboard status=%d", resp.StatusCode)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		log.Printf("[artistly] getUserID: body read failed: %v", err)
 		return "", err
 	}
+	log.Printf("[artistly] getUserID: body length=%d", len(body))
 
 	re := regexp.MustCompile(`data-page="([^"]+)"`)
 	matches := re.FindStringSubmatch(string(body))
 	if len(matches) < 2 {
+		log.Printf("[artistly] getUserID: no data-page attribute found")
 		return "", errors.New("no data-page attribute found")
 	}
 	decoded := strings.ReplaceAll(matches[1], "&quot;", `"`)
 	decoded = strings.ReplaceAll(decoded, "&#34;", `"`)
 	var page map[string]any
 	if err := json.Unmarshal([]byte(decoded), &page); err != nil {
+		log.Printf("[artistly] getUserID: JSON unmarshal failed: %v", err)
 		return "", err
 	}
 	props, _ := page["props"].(map[string]any)
 	if props == nil {
+		log.Printf("[artistly] getUserID: no props in data-page")
 		return "", errors.New("no props in data-page")
 	}
 	auth, _ := props["auth"].(map[string]any)
 	if auth == nil {
+		log.Printf("[artistly] getUserID: no auth in props")
 		return "", errors.New("no auth in props")
 	}
 	user, _ := auth["user"].(map[string]any)
 	if user == nil {
+		log.Printf("[artistly] getUserID: no user in auth")
 		return "", errors.New("no user in auth")
 	}
 	id := user["id"]
 	switch v := id.(type) {
 	case float64:
-		return fmt.Sprintf("%.0f", v), nil
+		result := fmt.Sprintf("%.0f", v)
+		log.Printf("[artistly] getUserID: found userID=%s", result)
+		return result, nil
 	case string:
+		log.Printf("[artistly] getUserID: found userID=%s", v)
 		return v, nil
 	default:
-		return fmt.Sprintf("%v", v), nil
+		result := fmt.Sprintf("%v", v)
+		log.Printf("[artistly] getUserID: found userID=%s (type=%T)", result, v)
+		return result, nil
 	}
 }
 
 // findDesignImageURL extracts the first image URL from a DesignProcessed payload.
 func findDesignImageURL(design map[string]any) string {
+	log.Printf("[artistly] findDesignImageURL: checking design keys=%v", func() []string {
+		keys := make([]string, 0, len(design))
+		for k := range design {
+			keys = append(keys, k)
+		}
+		return keys
+	}())
 	// Check direct image_url field
 	if url, ok := design["image_url"].(string); ok && url != "" {
+		log.Printf("[artistly] found image_url: %s", truncateString(url, 100))
 		return url
 	}
 	// Check images array
 	if images, ok := design["images"].([]any); ok && len(images) > 0 {
+		log.Printf("[artistly] found images array with %d entries", len(images))
 		if firstImage, ok := images[0].(map[string]any); ok {
 			if url, ok := firstImage["url"].(string); ok && url != "" {
+				log.Printf("[artistly] found images[0].url: %s", truncateString(url, 100))
 				return url
 			}
 			if url, ok := firstImage["image_url"].(string); ok && url != "" {
+				log.Printf("[artistly] found images[0].image_url: %s", truncateString(url, 100))
 				return url
 			}
 		}
 		if url, ok := images[0].(string); ok && url != "" {
+			log.Printf("[artistly] found images[0] as string: %s", truncateString(url, 100))
 			return url
 		}
 	}
 	// Check thumbnail / preview fields
 	for _, key := range []string{"thumbnail", "preview", "preview_url", "cdn_url"} {
 		if url, ok := design[key].(string); ok && url != "" && strings.Contains(url, "cdn.artistly.ai") {
+			log.Printf("[artistly] found %s: %s", key, truncateString(url, 100))
 			return url
 		}
 	}
 	// Last resort: search entire JSON for CDN URL
+	log.Printf("[artistly] no known fields matched, searching raw JSON for CDN URL")
 	raw, _ := json.Marshal(design)
-	return extractImageURL(string(raw))
+	url := extractImageURL(string(raw))
+	if url != "" {
+		log.Printf("[artistly] found CDN URL via regex fallback: %s", truncateString(url, 100))
+	} else {
+		log.Printf("[artistly] no CDN URL found in design data at all")
+	}
+	return url
 }
 
 // ConnectionStatus verifies the session is valid by attempting login.
