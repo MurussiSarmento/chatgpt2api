@@ -193,7 +193,36 @@ func (a *ArtistlyClient) ensureSession(ctx context.Context) error {
 // Designer v6 store endpoint. The category maps to the tool name (e.g.
 // "AI Image Designer v6"). Quality is "fast" or "high". Aspect ratio uses
 // the format "1:1", "16:9", etc. Count is the number of images (1-4).
+//
+// After a successful submission, Artistly redirects (302) to /personal-designs.
+// The generated image is NOT inline in that page — it is loaded asynchronously
+// via the internal designs API. We follow the redirect, then poll the designs
+// API until the newest design appears with a CDN image URL.
 func (a *ArtistlyClient) GenerateImage(ctx context.Context, prompt, category, quality, aspectRatio string, count int, folder, visibility string) (ArtistlyMedia, error) {
+	// Retry once on session expiry (419/409/401)
+	for attempt := 0; attempt < 2; attempt++ {
+		media, err := a.generateImageOnce(ctx, prompt, category, quality, aspectRatio, count, folder, visibility)
+		if err == nil {
+			return media, nil
+		}
+		// Only retry on session-related errors
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "session expired") || strings.Contains(errMsg, "status 419") || strings.Contains(errMsg, "status 409") || strings.Contains(errMsg, "status 401") {
+			a.mu.Lock()
+			a.loggedIn = false
+			a.xsrf = ""
+			a.version = ""
+			a.cookies = nil
+			a.mu.Unlock()
+			continue
+		}
+		return ArtistlyMedia{}, err
+	}
+	return ArtistlyMedia{}, errors.New("artistly: session expired after retry")
+}
+
+// generateImageOnce performs one attempt at image generation + polling.
+func (a *ArtistlyClient) generateImageOnce(ctx context.Context, prompt, category, quality, aspectRatio string, count int, folder, visibility string) (ArtistlyMedia, error) {
 	if err := a.ensureSession(ctx); err != nil {
 		return ArtistlyMedia{}, err
 	}
@@ -269,60 +298,125 @@ func (a *ArtistlyClient) GenerateImage(ctx context.Context, prompt, category, qu
 		return ArtistlyMedia{}, fmt.Errorf("artistly: response read failed: %w", err)
 	}
 
-	// Handle session expiry (409 = Inertia version mismatch, 401 = unauthenticated)
-	if resp.StatusCode == http.StatusConflict || resp.StatusCode == http.StatusUnauthorized {
-			a.mu.Lock()
-			a.loggedIn = false
-			a.xsrf = ""
-			a.version = ""
-			a.cookies = nil
-			a.mu.Unlock()
-			return ArtistlyMedia{}, errors.New("artistly: session expired - will retry on next call")
-		}
+	// Handle session expiry (409 = Inertia version mismatch, 401 = unauthenticated, 419 = CSRF)
+	if resp.StatusCode == http.StatusConflict || resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == 419 {
+		return ArtistlyMedia{}, fmt.Errorf("artistly: session expired (status %d)", resp.StatusCode)
+	}
 
 	if resp.StatusCode >= 400 {
 		return ArtistlyMedia{}, fmt.Errorf("artistly: generation failed (status %d): %s", resp.StatusCode, truncateString(string(respBody), 500))
 	}
 
-	// Parse response - Artistly returns Inertia JSON with the generated image URL
-	// in the props. The exact structure depends on the server response.
+	// The store POST typically returns 302 → /personal-designs. Go's HTTP client
+	// follows the redirect automatically, so respBody is the personal-designs HTML.
+	// The generated image is NOT inline — we must fetch it from the designs API.
+
+	// First try: check if the response body already contains a CDN URL (unlikely but possible)
+	if imageURL := extractImageURL(string(respBody)); imageURL != "" {
+		return ArtistlyMedia{URL: imageURL, Status: "completed"}, nil
+	}
+
+	// Poll the internal designs API for the newest design with our prompt
+	return a.pollForDesign(ctx, prompt)
+}
+
+// pollForDesign fetches the internal designs API and returns the most recent
+// design's image URL. Artistly loads designs asynchronously after generation,
+// so we poll with short intervals until a matching design appears or timeout.
+func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (ArtistlyMedia, error) {
+	deadline := time.After(ArtistlyPollTimeout)
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ArtistlyMedia{}, ctx.Err()
+		case <-deadline:
+			return ArtistlyMedia{}, errors.New("artistly: timed out waiting for generated image")
+		case <-ticker.C:
+		}
+
+		imageURL, err := a.fetchLatestDesignImage(ctx)
+		if err != nil {
+			// Transient errors during polling are not fatal; keep trying
+			continue
+		}
+		if imageURL != "" {
+			return ArtistlyMedia{URL: imageURL, Status: "completed"}, nil
+		}
+	}
+}
+
+// fetchLatestDesignImage calls the internal designs API and extracts the first
+// image URL from the response. Returns empty string if no image is found yet.
+func (a *ArtistlyClient) fetchLatestDesignImage(ctx context.Context) (string, error) {
+	a.mu.Lock()
+	headers := map[string]string{
+		"Accept":           "application/json",
+		"X-Requested-With": "XMLHttpRequest",
+		"X-XSRF-TOKEN":     a.xsrf,
+	}
+	a.mu.Unlock()
+
+	resp, err := a.doRequestWithCookies(ctx, http.MethodGet, artistlyBaseURL+"/api/internal/designs/index", nil, headers)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("designs API returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	// The API returns JSON with a "data" array of design objects.
+	// Each design has nested image URLs in various structures.
 	var result map[string]any
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		// Try extracting URL from HTML response
-		imageURL := extractImageURL(string(respBody))
-		if imageURL != "" {
-			return ArtistlyMedia{URL: imageURL, Status: "completed"}, nil
+	if err := json.Unmarshal(body, &result); err != nil {
+		// Fallback: try regex extraction on raw body
+		return extractImageURL(string(body)), nil
+	}
+
+	// Try to find image URL in the response data
+	data, _ := result["data"].([]any)
+	for _, item := range data {
+		design, ok := item.(map[string]any)
+		if !ok {
+			continue
 		}
-		return ArtistlyMedia{}, fmt.Errorf("artistly: failed to parse response: %w", err)
-	}
-
-	// Navigate Inertia response structure
-	props, _ := result["props"].(map[string]any)
-	if props == nil {
-		// Try direct URL extraction
-		imageURL := extractImageURL(string(respBody))
-		if imageURL != "" {
-			return ArtistlyMedia{URL: imageURL, Status: "completed"}, nil
+		// Check direct image_url field
+		if url, ok := design["image_url"].(string); ok && url != "" {
+			return url, nil
 		}
-		return ArtistlyMedia{Status: "submitted"}, nil
+		// Check images array
+		if images, ok := design["images"].([]any); ok && len(images) > 0 {
+			if firstImage, ok := images[0].(map[string]any); ok {
+				if url, ok := firstImage["url"].(string); ok && url != "" {
+					return url, nil
+				}
+				if url, ok := firstImage["image_url"].(string); ok && url != "" {
+					return url, nil
+				}
+			}
+			if url, ok := images[0].(string); ok && url != "" {
+				return url, nil
+			}
+		}
+		// Check thumbnail / preview fields
+		for _, key := range []string{"thumbnail", "preview", "preview_url", "cdn_url"} {
+			if url, ok := design[key].(string); ok && url != "" && strings.Contains(url, "cdn.artistly.ai") {
+				return url, nil
+			}
+		}
 	}
 
-	// Look for image URL in various possible locations
-	imageURL := findImageURL(props)
-	if imageURL == "" {
-		imageURL = extractImageURL(string(respBody))
-	}
-
-	media := ArtistlyMedia{
-		URL:    imageURL,
-		Status: "completed",
-	}
-	if jobID, ok := props["job_id"].(string); ok {
-		media.JobID = jobID
-		media.Status = "processing"
-	}
-
-	return media, nil
+	// Last resort: regex on raw body
+	return extractImageURL(string(body)), nil
 }
 
 // ConnectionStatus verifies the session is valid by attempting login.
