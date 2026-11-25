@@ -320,12 +320,17 @@ func (a *ArtistlyClient) generateImageOnce(ctx context.Context, prompt, category
 	return a.pollForDesign(ctx, prompt)
 }
 
-// pollForDesign fetches the internal designs API and returns the most recent
-// design's image URL. Artistly loads designs asynchronously after generation,
-// so we poll with short intervals until a matching design appears or timeout.
+// pollForDesign scrapes the personal-designs page for newly generated CDN
+// image URLs. Artistly loads designs asynchronously via Pusher/WebSocket, so
+// there is no reliable REST API to poll. Instead we fetch the full HTML page
+// periodically and look for CDN URLs that weren't present before generation
+// started. The first new URL is assumed to be the generated image.
 func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (ArtistlyMedia, error) {
+	// Snapshot existing CDN URLs before polling so we can detect new ones
+	knownURLs, _ := a.scrapeDesignCDNURLs(ctx)
+
 	deadline := time.After(ArtistlyPollTimeout)
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -337,86 +342,53 @@ func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (Arti
 		case <-ticker.C:
 		}
 
-		imageURL, err := a.fetchLatestDesignImage(ctx)
+		currentURLs, err := a.scrapeDesignCDNURLs(ctx)
 		if err != nil {
-			// Transient errors during polling are not fatal; keep trying
 			continue
 		}
-		if imageURL != "" {
-			return ArtistlyMedia{URL: imageURL, Status: "completed"}, nil
+
+		// Find URLs that are new since generation started
+		for u := range currentURLs {
+			if !knownURLs[u] {
+				return ArtistlyMedia{URL: u, Status: "completed"}, nil
+			}
 		}
 	}
 }
 
-// fetchLatestDesignImage calls the internal designs API and extracts the first
-// image URL from the response. Returns empty string if no image is found yet.
-func (a *ArtistlyClient) fetchLatestDesignImage(ctx context.Context) (string, error) {
-	a.mu.Lock()
-	headers := map[string]string{
-		"Accept":           "application/json",
-		"X-Requested-With": "XMLHttpRequest",
-		"X-XSRF-TOKEN":     a.xsrf,
-	}
-	a.mu.Unlock()
-
-	resp, err := a.doRequestWithCookies(ctx, http.MethodGet, artistlyBaseURL+"/api/internal/designs/index", nil, headers)
+// scrapeDesignCDNURLs fetches the personal-designs page and extracts all
+// CDN image URLs from the HTML. Returns a set of URLs found.
+func (a *ArtistlyClient) scrapeDesignCDNURLs(ctx context.Context) (map[string]bool, error) {
+	resp, err := a.doRequestWithCookies(ctx, http.MethodGet, artistlyBaseURL+"/personal-designs", nil, map[string]string{
+		"Accept": "text/html",
+	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("designs API returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("personal-designs returned status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	// The API returns JSON with a "data" array of design objects.
-	// Each design has nested image URLs in various structures.
-	var result map[string]any
-	if err := json.Unmarshal(body, &result); err != nil {
-		// Fallback: try regex extraction on raw body
-		return extractImageURL(string(body)), nil
+	urls := extractAllImageURLs(string(body))
+	result := make(map[string]bool, len(urls))
+	for _, u := range urls {
+		result[u] = true
 	}
+	return result, nil
+}
 
-	// Try to find image URL in the response data
-	data, _ := result["data"].([]any)
-	for _, item := range data {
-		design, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		// Check direct image_url field
-		if url, ok := design["image_url"].(string); ok && url != "" {
-			return url, nil
-		}
-		// Check images array
-		if images, ok := design["images"].([]any); ok && len(images) > 0 {
-			if firstImage, ok := images[0].(map[string]any); ok {
-				if url, ok := firstImage["url"].(string); ok && url != "" {
-					return url, nil
-				}
-				if url, ok := firstImage["image_url"].(string); ok && url != "" {
-					return url, nil
-				}
-			}
-			if url, ok := images[0].(string); ok && url != "" {
-				return url, nil
-			}
-		}
-		// Check thumbnail / preview fields
-		for _, key := range []string{"thumbnail", "preview", "preview_url", "cdn_url"} {
-			if url, ok := design[key].(string); ok && url != "" && strings.Contains(url, "cdn.artistly.ai") {
-				return url, nil
-			}
-		}
-	}
-
-	// Last resort: regex on raw body
-	return extractImageURL(string(body)), nil
+// extractAllImageURLs finds all CDN image URLs in content. Unlike extractImageURL
+// which returns only the first match, this returns all matches.
+func extractAllImageURLs(content string) []string {
+	re := regexp.MustCompile(`https://cdn\.artistly\.ai/[^\s"'\\]+\.(?:png|jpg|jpeg|webp)`)
+	return re.FindAllString(content, -1)
 }
 
 // ConnectionStatus verifies the session is valid by attempting login.
