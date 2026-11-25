@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -100,11 +101,13 @@ func (a *ArtistlyClient) ensureSession(ctx context.Context) error {
 		return fmt.Errorf("artistly: login page read failed: %w", err)
 	}
 
-	// Extract XSRF token from cookies
+	// Extract XSRF token from cookies. The Set-Cookie value is URL-encoded
+	// (ends in %3D); Laravel's VerifyCsrfToken expects the decoded form in
+	// the X-XSRF-TOKEN header, so decode it once here.
 	var xsrf string
 	for _, c := range loginPage.Cookies() {
 		if c.Name == "XSRF-TOKEN" {
-			xsrf = c.Value
+			xsrf, _ = url.QueryUnescape(c.Value)
 		}
 	}
 	if xsrf == "" {
@@ -338,6 +341,8 @@ func (a *ArtistlyClient) doRequest(ctx context.Context, method, url string, body
 }
 
 // doRequestWithCookies performs an HTTP request with session cookies attached.
+// Cookies are attached manually only if the client jar has none (the jar set
+// in NewArtistlyClient normally handles this automatically).
 func (a *ArtistlyClient) doRequestWithCookies(ctx context.Context, method, rawURL string, body io.Reader, headers map[string]string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, body)
 	if err != nil {
@@ -347,8 +352,10 @@ func (a *ArtistlyClient) doRequestWithCookies(ctx context.Context, method, rawUR
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	for _, c := range a.cookies {
-		req.AddCookie(c)
+	if a.client.Jar == nil {
+		for _, c := range a.cookies {
+			req.AddCookie(c)
+		}
 	}
 	return a.client.Do(req)
 }
