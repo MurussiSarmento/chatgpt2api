@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 )
 
 const (
@@ -244,7 +243,9 @@ func (a *ArtistlyClient) generateImageOnce(ctx context.Context, prompt, category
 	if category == "" {
 		category = "AI Image Designer v6"
 	}
-	if quality == "" {
+	// Artistly only accepts "fast" or "high"; anything else (e.g. the Studio's
+	// "auto") is accepted with HTTP 200 but the job is silently never created.
+	if quality != "high" {
 		quality = "fast"
 	}
 	if count < 1 {
@@ -335,30 +336,21 @@ func (a *ArtistlyClient) generateImageOnce(ctx context.Context, prompt, category
 		return ArtistlyMedia{URL: imageURL, Status: "completed"}, nil
 	}
 
-	log.Printf("[artistly] no CDN URL in store response, starting WebSocket poll")
-	// Poll via Reverb WebSocket for the DesignProcessed event
+	log.Printf("[artistly] no CDN URL in store response, starting designs API poll")
 	return a.pollForDesign(ctx, prompt)
 }
 
-// pollForDesign connects to Artistly's Reverb WebSocket server and listens
-// for the App\Events\DesignProcessed event on the private-design.{userId}
-// channel — verified end-to-end. The channel requires auth from
-// /broadcasting/auth signed against the logged-in session. The connection
-// is re-established with backoff whenever it drops; gorilla connections are
-// unusable after any read error, so we never re-read one.
+// pollForDesign polls the REST designs API (/api/internal/designs) for a new
+// design created after submission. Verified working: it returns the user's
+// designs newest-first, including the CDN image URL. We prefer this over the
+// Reverb WebSocket (private-design.{userId}) because the WebSocket event only
+// fires for jobs Artistly actually created — and any transient disconnect
+// could miss it entirely.
 func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (ArtistlyMedia, error) {
 	log.Printf("[artistly] pollForDesign starting")
-	userID, err := a.getUserID(ctx)
-	if err != nil {
-		log.Printf("[artistly] getUserID failed: %v", err)
-		return ArtistlyMedia{}, fmt.Errorf("artistly: failed to get user ID for WebSocket: %w", err)
-	}
-	log.Printf("[artistly] got userID=%s", userID)
-
-	wsURL := "wss://ws.artistly.ai/app/kb747pbueimelgd4?protocol=7&client=js&version=8.4.0"
-	channel := fmt.Sprintf("private-design.%s", userID)
+	submittedAt := time.Now().UTC().Add(-5 * time.Second) // small clock-skew allowance
 	overallDeadline := time.Now().Add(ArtistlyPollTimeout)
-	backoff := 2 * time.Second
+	interval := 5 * time.Second
 
 	for attempt := 1; ; attempt++ {
 		if ctx.Err() != nil {
@@ -369,170 +361,35 @@ func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (Arti
 			return ArtistlyMedia{}, errors.New("artistly: timed out waiting for generated image")
 		}
 
-		media, retryable, err := a.listenDesignChannel(ctx, wsURL, channel, overallDeadline)
-		if err == nil {
-			return media, nil
-		}
-		if !retryable {
-			return ArtistlyMedia{}, err
+		imageURL, found, err := a.fetchLatestDesignImage(ctx, submittedAt)
+		if err != nil {
+			log.Printf("[artistly] designs poll attempt %d error: %v", attempt, err)
+		} else if found {
+			log.Printf("[artistly] found image URL after %d polls: %s", attempt, truncateString(imageURL, 100))
+			return ArtistlyMedia{URL: imageURL, Status: "completed"}, nil
+		} else {
+			log.Printf("[artistly] designs poll attempt %d: no new design yet", attempt)
 		}
 
-		log.Printf("[artistly] WebSocket attempt %d failed (%v); reconnecting in %v", attempt, err, backoff)
 		select {
 		case <-ctx.Done():
 			return ArtistlyMedia{}, ctx.Err()
-		case <-time.After(backoff):
-		}
-		if backoff < 15*time.Second {
-			backoff *= 2
+		case <-time.After(interval):
 		}
 	}
 }
 
-// listenDesignChannel opens one WebSocket connection, authenticates and
-// subscribes to the private design channel and waits for DesignProcessed.
-// The returned bool marks whether the caller may retry with a fresh
-// connection (transport errors) or must stop (deadline/context/permanent errors).
-func (a *ArtistlyClient) listenDesignChannel(ctx context.Context, wsURL, channel string, overallDeadline time.Time) (ArtistlyMedia, bool, error) {
-	dialCtx, cancelDial := context.WithTimeout(ctx, 15*time.Second)
-	conn, _, err := websocket.DefaultDialer.DialContext(dialCtx, wsURL, nil)
-	cancelDial()
+// fetchLatestDesignImage calls GET /api/internal/designs and returns the image
+// URL of the newest design created after `since`. found=false when no design
+// qualifies yet (job still processing).
+func (a *ArtistlyClient) fetchLatestDesignImage(ctx context.Context, since time.Time) (string, bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, artistlyBaseURL+"/api/internal/designs", nil)
 	if err != nil {
-		return ArtistlyMedia{}, true, fmt.Errorf("dial failed: %w", err)
-	}
-	defer conn.Close()
-	log.Printf("[artistly] WebSocket connected")
-
-	// connection_established handshake
-	_ = conn.SetReadDeadline(time.Now().Add(15 * time.Second))
-	_, msg, err := conn.ReadMessage()
-	if err != nil {
-		return ArtistlyMedia{}, true, fmt.Errorf("handshake read failed: %w", err)
-	}
-	log.Printf("[artistly] initial message: %s", truncateString(string(msg), 120))
-
-	// Extract socket_id and authenticate the private channel via Laravel's
-	// /broadcasting/auth endpoint (Echo's default), signed with the session.
-	var connEvent struct {
-		Data string `json:"data"`
-	}
-	if err := json.Unmarshal(msg, &connEvent); err != nil {
-		return ArtistlyMedia{}, true, fmt.Errorf("handshake unmarshal failed: %w", err)
-	}
-	var handshake struct {
-		SocketID string `json:"socket_id"`
-	}
-	if err := json.Unmarshal([]byte(connEvent.Data), &handshake); err != nil {
-		return ArtistlyMedia{}, true, fmt.Errorf("socket_id extract failed: %w", err)
-	}
-	authSig, err := a.authorizeChannel(ctx, handshake.SocketID, channel)
-	if err != nil {
-		return ArtistlyMedia{}, false, fmt.Errorf("channel auth failed: %w", err)
-	}
-	log.Printf("[artistly] channel authorized: %s", channel)
-
-	subscribeMsg, _ := json.Marshal(map[string]any{
-		"event": "pusher:subscribe",
-		"data":  map[string]string{"channel": channel, "auth": authSig},
-	})
-	if err := conn.WriteMessage(websocket.TextMessage, subscribeMsg); err != nil {
-		return ArtistlyMedia{}, true, fmt.Errorf("subscribe write failed: %w", err)
-	}
-	log.Printf("[artistly] subscribed to channel: %s", channel)
-
-	msgCount := 0
-	for {
-		// Bound each wait by the remaining overall deadline and 45s max.
-		nextDeadline := time.Now().Add(45 * time.Second)
-		if remaining := time.Until(overallDeadline); remaining < nextDeadline.Sub(time.Now()) {
-			nextDeadline = time.Now().Add(remaining)
-		}
-		_ = conn.SetReadDeadline(nextDeadline)
-
-		_, msg, err := conn.ReadMessage()
-		if err != nil {
-			// gorilla connections are unusable after a read error — never
-			// re-read; tell the caller to open a fresh connection instead.
-			return ArtistlyMedia{}, true, fmt.Errorf("read failed after %d messages: %w", msgCount, err)
-		}
-		msgCount++
-
-		var event map[string]json.RawMessage
-		if err := json.Unmarshal(msg, &event); err != nil {
-			log.Printf("[artistly] message #%d unmarshal failed: %v", msgCount, err)
-			continue
-		}
-
-		var name string
-		if rawName, ok := event["event"]; ok {
-			_ = json.Unmarshal(rawName, &name)
-		}
-		log.Printf("[artistly] message #%d event=%s", msgCount, name)
-
-		// Keep the Reverb connection alive by answering pings.
-		if name == "pusher:ping" {
-			pong, _ := json.Marshal(map[string]any{"event": "pusher:pong", "data": map[string]any{}})
-			if werr := conn.WriteMessage(websocket.TextMessage, pong); werr != nil {
-				return ArtistlyMedia{}, true, fmt.Errorf("pong write failed: %w", werr)
-			}
-			continue
-		}
-		if name == "pusher:error" {
-			log.Printf("[artistly] pusher error: %s", truncateString(string(msg), 300))
-			return ArtistlyMedia{}, false, fmt.Errorf("pusher error: %s", truncateString(string(msg), 200))
-		}
-
-		// The event arrives namespaced as App\Events\DesignProcessed.
-		if strings.HasSuffix(name, "DesignProcessed") {
-			log.Printf("[artistly] DesignProcessed received! raw=%s", truncateString(string(msg), 500))
-			rawData, ok := event["data"]
-			if !ok {
-				log.Printf("[artistly] DesignProcessed has no data field")
-				continue
-			}
-			var dataBytes []byte
-			var dataStr string
-			if err := json.Unmarshal(rawData, &dataStr); err == nil {
-				dataBytes = []byte(dataStr)
-			} else {
-				dataBytes = rawData
-			}
-			// Payload shape (verified): {designUuid, design:{..., images:"[\"https://...\"]"}}
-			var payload struct {
-				Design map[string]any `json:"design"`
-			}
-			if err := json.Unmarshal(dataBytes, &payload); err != nil {
-				log.Printf("[artistly] DesignProcessed payload unmarshal failed: %v", err)
-				continue
-			}
-			imageURL := findDesignImageURL(payload.Design)
-			if imageURL != "" {
-				log.Printf("[artistly] found image URL from DesignProcessed: %s", truncateString(imageURL, 100))
-				return ArtistlyMedia{URL: imageURL, Status: "completed"}, true, nil
-			}
-			log.Printf("[artistly] DesignProcessed but no image URL found in design data")
-		}
-	}
-}
-
-// authorizeChannel obtains the pusher auth signature for a private channel
-// from Laravel's /broadcasting/auth endpoint, using the logged-in session.
-func (a *ArtistlyClient) authorizeChannel(ctx context.Context, socketID, channel string) (string, error) {
-	form := url.Values{}
-	form.Set("socket_id", socketID)
-	form.Set("channel_name", channel)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		artistlyBaseURL+"/broadcasting/auth", strings.NewReader(form.Encode()))
-	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	req.Header.Set("User-Agent", artistlyUserAgent)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-	req.Header.Set("X-XSRF-TOKEN", a.xsrf)
-	req.Header.Set("Referer", artistlyBaseURL+"/personal-designs")
-	req.Header.Set("Origin", artistlyBaseURL)
 	if a.client.Jar == nil {
 		for _, c := range a.cookies {
 			req.AddCookie(c)
@@ -540,25 +397,44 @@ func (a *ArtistlyClient) authorizeChannel(ctx context.Context, socketID, channel
 	}
 	resp, err := a.client.Do(req)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("broadcasting/auth status %d: %s", resp.StatusCode, truncateString(string(body), 200))
+		return "", false, fmt.Errorf("designs API status %d: %s", resp.StatusCode, truncateString(string(body), 200))
 	}
+
 	var out struct {
-		Auth string `json:"auth"`
+		Data []struct {
+			UUID      string `json:"uuid"`
+			Images    string `json:"images"`
+			CreatedAt string `json:"created_at"`
+		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", err
+		return "", false, err
 	}
-	if out.Auth == "" {
-		return "", errors.New("broadcasting/auth returned empty auth")
-	}
-	return out.Auth, nil
-}
 
+	for _, d := range out.Data {
+		created, err := time.Parse(time.RFC3339, d.CreatedAt)
+		if err != nil {
+			continue
+		}
+		if created.Before(since) {
+			continue // older than this submission
+		}
+		if d.Images == "" {
+			continue // design exists but image not ready
+		}
+		var urls []string
+		if err := json.Unmarshal([]byte(d.Images), &urls); err != nil || len(urls) == 0 || urls[0] == "" {
+			continue
+		}
+		return urls[0], true, nil
+	}
+	return "", false, nil
+}
 // getUserID fetches the authenticated user's ID from the dashboard page props.
 func (a *ArtistlyClient) getUserID(ctx context.Context) (string, error) {
 	log.Printf("[artistly] getUserID: fetching dashboard page")
