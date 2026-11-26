@@ -299,6 +299,11 @@ func (a *ArtistlyClient) generateImageOnce(ctx context.Context, prompt, category
 	}
 	a.mu.Unlock()
 
+	// Capture the submission timestamp BEFORE the POST: the design is created
+	// server-side during the request, so a timestamp taken after the response
+	// can exclude the very design we just created (clock/latency race).
+	submittedAt := time.Now().UTC().Add(-5 * time.Second) // clock-skew allowance
+
 	log.Printf("[artistly] POSTing to store endpoint: %s", artistlyBaseURL+artistlyStorePath)
 	resp, err := a.doRequestWithCookies(ctx, http.MethodPost, artistlyBaseURL+artistlyStorePath, bytes.NewReader(body), headers)
 	if err != nil {
@@ -337,7 +342,7 @@ func (a *ArtistlyClient) generateImageOnce(ctx context.Context, prompt, category
 	}
 
 	log.Printf("[artistly] no CDN URL in store response, starting designs API poll")
-	return a.pollForDesign(ctx, prompt)
+	return a.pollForDesign(ctx, submittedAt)
 }
 
 // pollForDesign polls the REST designs API (/api/internal/designs) for a new
@@ -346,9 +351,8 @@ func (a *ArtistlyClient) generateImageOnce(ctx context.Context, prompt, category
 // Reverb WebSocket (private-design.{userId}) because the WebSocket event only
 // fires for jobs Artistly actually created — and any transient disconnect
 // could miss it entirely.
-func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (ArtistlyMedia, error) {
-	log.Printf("[artistly] pollForDesign starting")
-	submittedAt := time.Now().UTC().Add(-5 * time.Second) // small clock-skew allowance
+func (a *ArtistlyClient) pollForDesign(ctx context.Context, submittedAt time.Time) (ArtistlyMedia, error) {
+	log.Printf("[artistly] pollForDesign starting (submittedAt=%s)", submittedAt.Format(time.RFC3339))
 	overallDeadline := time.Now().Add(ArtistlyPollTimeout)
 	interval := 5 * time.Second
 
