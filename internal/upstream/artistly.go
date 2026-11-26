@@ -341,10 +341,11 @@ func (a *ArtistlyClient) generateImageOnce(ctx context.Context, prompt, category
 }
 
 // pollForDesign connects to Artistly's Reverb WebSocket server and listens
-// for the DesignProcessed event on the design.{userId} channel. This is how
-// the frontend receives generated images — there is no REST API for it.
-// The connection is re-established with backoff whenever it drops; gorilla
-// connections are unusable after any read error, so we never re-read one.
+// for the App\Events\DesignProcessed event on the private-design.{userId}
+// channel — verified end-to-end. The channel requires auth from
+// /broadcasting/auth signed against the logged-in session. The connection
+// is re-established with backoff whenever it drops; gorilla connections are
+// unusable after any read error, so we never re-read one.
 func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (ArtistlyMedia, error) {
 	log.Printf("[artistly] pollForDesign starting")
 	userID, err := a.getUserID(ctx)
@@ -355,7 +356,7 @@ func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (Arti
 	log.Printf("[artistly] got userID=%s", userID)
 
 	wsURL := "wss://ws.artistly.ai/app/kb747pbueimelgd4?protocol=7&client=js&version=8.4.0"
-	channel := fmt.Sprintf("design.%s", userID)
+	channel := fmt.Sprintf("private-design.%s", userID)
 	overallDeadline := time.Now().Add(ArtistlyPollTimeout)
 	backoff := 2 * time.Second
 
@@ -388,10 +389,10 @@ func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (Arti
 	}
 }
 
-// listenDesignChannel opens one WebSocket connection, subscribes to the
-// design channel and waits for DesignProcessed. The returned bool marks
-// whether the caller may retry with a fresh connection (transport errors)
-// or must stop (deadline/context/permanent errors).
+// listenDesignChannel opens one WebSocket connection, authenticates and
+// subscribes to the private design channel and waits for DesignProcessed.
+// The returned bool marks whether the caller may retry with a fresh
+// connection (transport errors) or must stop (deadline/context/permanent errors).
 func (a *ArtistlyClient) listenDesignChannel(ctx context.Context, wsURL, channel string, overallDeadline time.Time) (ArtistlyMedia, bool, error) {
 	dialCtx, cancelDial := context.WithTimeout(ctx, 15*time.Second)
 	conn, _, err := websocket.DefaultDialer.DialContext(dialCtx, wsURL, nil)
@@ -410,9 +411,29 @@ func (a *ArtistlyClient) listenDesignChannel(ctx context.Context, wsURL, channel
 	}
 	log.Printf("[artistly] initial message: %s", truncateString(string(msg), 120))
 
+	// Extract socket_id and authenticate the private channel via Laravel's
+	// /broadcasting/auth endpoint (Echo's default), signed with the session.
+	var connEvent struct {
+		Data string `json:"data"`
+	}
+	if err := json.Unmarshal(msg, &connEvent); err != nil {
+		return ArtistlyMedia{}, true, fmt.Errorf("handshake unmarshal failed: %w", err)
+	}
+	var handshake struct {
+		SocketID string `json:"socket_id"`
+	}
+	if err := json.Unmarshal([]byte(connEvent.Data), &handshake); err != nil {
+		return ArtistlyMedia{}, true, fmt.Errorf("socket_id extract failed: %w", err)
+	}
+	authSig, err := a.authorizeChannel(ctx, handshake.SocketID, channel)
+	if err != nil {
+		return ArtistlyMedia{}, false, fmt.Errorf("channel auth failed: %w", err)
+	}
+	log.Printf("[artistly] channel authorized: %s", channel)
+
 	subscribeMsg, _ := json.Marshal(map[string]any{
 		"event": "pusher:subscribe",
-		"data":  map[string]string{"channel": channel},
+		"data":  map[string]string{"channel": channel, "auth": authSig},
 	})
 	if err := conn.WriteMessage(websocket.TextMessage, subscribeMsg); err != nil {
 		return ArtistlyMedia{}, true, fmt.Errorf("subscribe write failed: %w", err)
@@ -461,7 +482,8 @@ func (a *ArtistlyClient) listenDesignChannel(ctx context.Context, wsURL, channel
 			return ArtistlyMedia{}, false, fmt.Errorf("pusher error: %s", truncateString(string(msg), 200))
 		}
 
-		if name == "DesignProcessed" {
+		// The event arrives namespaced as App\Events\DesignProcessed.
+		if strings.HasSuffix(name, "DesignProcessed") {
 			log.Printf("[artistly] DesignProcessed received! raw=%s", truncateString(string(msg), 500))
 			rawData, ok := event["data"]
 			if !ok {
@@ -475,12 +497,15 @@ func (a *ArtistlyClient) listenDesignChannel(ctx context.Context, wsURL, channel
 			} else {
 				dataBytes = rawData
 			}
-			var design map[string]any
-			if err := json.Unmarshal(dataBytes, &design); err != nil {
-				log.Printf("[artistly] DesignProcessed data unmarshal failed: %v", err)
+			// Payload shape (verified): {designUuid, design:{..., images:"[\"https://...\"]"}}
+			var payload struct {
+				Design map[string]any `json:"design"`
+			}
+			if err := json.Unmarshal(dataBytes, &payload); err != nil {
+				log.Printf("[artistly] DesignProcessed payload unmarshal failed: %v", err)
 				continue
 			}
-			imageURL := findDesignImageURL(design)
+			imageURL := findDesignImageURL(payload.Design)
 			if imageURL != "" {
 				log.Printf("[artistly] found image URL from DesignProcessed: %s", truncateString(imageURL, 100))
 				return ArtistlyMedia{URL: imageURL, Status: "completed"}, true, nil
@@ -488,6 +513,50 @@ func (a *ArtistlyClient) listenDesignChannel(ctx context.Context, wsURL, channel
 			log.Printf("[artistly] DesignProcessed but no image URL found in design data")
 		}
 	}
+}
+
+// authorizeChannel obtains the pusher auth signature for a private channel
+// from Laravel's /broadcasting/auth endpoint, using the logged-in session.
+func (a *ArtistlyClient) authorizeChannel(ctx context.Context, socketID, channel string) (string, error) {
+	form := url.Values{}
+	form.Set("socket_id", socketID)
+	form.Set("channel_name", channel)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		artistlyBaseURL+"/broadcasting/auth", strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", artistlyUserAgent)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	req.Header.Set("X-XSRF-TOKEN", a.xsrf)
+	req.Header.Set("Referer", artistlyBaseURL+"/personal-designs")
+	req.Header.Set("Origin", artistlyBaseURL)
+	if a.client.Jar == nil {
+		for _, c := range a.cookies {
+			req.AddCookie(c)
+		}
+	}
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("broadcasting/auth status %d: %s", resp.StatusCode, truncateString(string(body), 200))
+	}
+	var out struct {
+		Auth string `json:"auth"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", err
+	}
+	if out.Auth == "" {
+		return "", errors.New("broadcasting/auth returned empty auth")
+	}
+	return out.Auth, nil
 }
 
 // getUserID fetches the authenticated user's ID from the dashboard page props.
@@ -568,22 +637,35 @@ func findDesignImageURL(design map[string]any) string {
 		log.Printf("[artistly] found image_url: %s", truncateString(url, 100))
 		return url
 	}
-	// Check images array
-	if images, ok := design["images"].([]any); ok && len(images) > 0 {
-		log.Printf("[artistly] found images array with %d entries", len(images))
-		if firstImage, ok := images[0].(map[string]any); ok {
-			if url, ok := firstImage["url"].(string); ok && url != "" {
-				log.Printf("[artistly] found images[0].url: %s", truncateString(url, 100))
-				return url
+	// Check images array — the DesignProcessed payload carries images as a
+	// JSON-encoded string: "images":"[\"https://cdn.artistly.ai/...\"]"
+	if imagesRaw, ok := design["images"]; ok {
+		switch v := imagesRaw.(type) {
+		case string:
+			var urls []string
+			if err := json.Unmarshal([]byte(v), &urls); err == nil && len(urls) > 0 && urls[0] != "" {
+				log.Printf("[artistly] found images[0] from JSON string: %s", truncateString(urls[0], 100))
+				return urls[0]
 			}
-			if url, ok := firstImage["image_url"].(string); ok && url != "" {
-				log.Printf("[artistly] found images[0].image_url: %s", truncateString(url, 100))
-				return url
+			if v != "" && strings.HasPrefix(v, "https://") {
+				log.Printf("[artistly] found images as plain URL: %s", truncateString(v, 100))
+				return v
 			}
-		}
-		if url, ok := images[0].(string); ok && url != "" {
-			log.Printf("[artistly] found images[0] as string: %s", truncateString(url, 100))
-			return url
+		case []any:
+			if len(v) > 0 {
+				if s, ok := v[0].(string); ok && s != "" {
+					log.Printf("[artistly] found images[0] from array: %s", truncateString(s, 100))
+					return s
+				}
+				if m, ok := v[0].(map[string]any); ok {
+					if u, ok := m["url"].(string); ok && u != "" {
+						return u
+					}
+					if u, ok := m["image_url"].(string); ok && u != "" {
+						return u
+					}
+				}
+			}
 		}
 	}
 	// Check thumbnail / preview fields
