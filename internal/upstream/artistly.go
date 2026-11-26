@@ -343,9 +343,10 @@ func (a *ArtistlyClient) generateImageOnce(ctx context.Context, prompt, category
 // pollForDesign connects to Artistly's Reverb WebSocket server and listens
 // for the DesignProcessed event on the design.{userId} channel. This is how
 // the frontend receives generated images — there is no REST API for it.
+// The connection is re-established with backoff whenever it drops; gorilla
+// connections are unusable after any read error, so we never re-read one.
 func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (ArtistlyMedia, error) {
 	log.Printf("[artistly] pollForDesign starting")
-	// Get user ID from the session by fetching dashboard props
 	userID, err := a.getUserID(ctx)
 	if err != nil {
 		log.Printf("[artistly] getUserID failed: %v", err)
@@ -355,61 +356,83 @@ func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (Arti
 
 	wsURL := "wss://ws.artistly.ai/app/kb747pbueimelgd4?protocol=7&client=js&version=8.4.0"
 	channel := fmt.Sprintf("design.%s", userID)
-	log.Printf("[artistly] connecting to WebSocket: %s channel=%s", wsURL, channel)
+	overallDeadline := time.Now().Add(ArtistlyPollTimeout)
+	backoff := 2 * time.Second
 
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, nil)
+	for attempt := 1; ; attempt++ {
+		if ctx.Err() != nil {
+			return ArtistlyMedia{}, ctx.Err()
+		}
+		if time.Now().After(overallDeadline) {
+			log.Printf("[artistly] overall deadline (%v) reached", ArtistlyPollTimeout)
+			return ArtistlyMedia{}, errors.New("artistly: timed out waiting for generated image")
+		}
+
+		media, retryable, err := a.listenDesignChannel(ctx, wsURL, channel, overallDeadline)
+		if err == nil {
+			return media, nil
+		}
+		if !retryable {
+			return ArtistlyMedia{}, err
+		}
+
+		log.Printf("[artistly] WebSocket attempt %d failed (%v); reconnecting in %v", attempt, err, backoff)
+		select {
+		case <-ctx.Done():
+			return ArtistlyMedia{}, ctx.Err()
+		case <-time.After(backoff):
+		}
+		if backoff < 15*time.Second {
+			backoff *= 2
+		}
+	}
+}
+
+// listenDesignChannel opens one WebSocket connection, subscribes to the
+// design channel and waits for DesignProcessed. The returned bool marks
+// whether the caller may retry with a fresh connection (transport errors)
+// or must stop (deadline/context/permanent errors).
+func (a *ArtistlyClient) listenDesignChannel(ctx context.Context, wsURL, channel string, overallDeadline time.Time) (ArtistlyMedia, bool, error) {
+	dialCtx, cancelDial := context.WithTimeout(ctx, 15*time.Second)
+	conn, _, err := websocket.DefaultDialer.DialContext(dialCtx, wsURL, nil)
+	cancelDial()
 	if err != nil {
-		log.Printf("[artistly] WebSocket dial failed: %v", err)
-		return ArtistlyMedia{}, fmt.Errorf("artistly: WebSocket dial failed: %w", err)
+		return ArtistlyMedia{}, true, fmt.Errorf("dial failed: %w", err)
 	}
 	defer conn.Close()
 	log.Printf("[artistly] WebSocket connected")
 
-	// Wait for connection_established
+	// connection_established handshake
+	_ = conn.SetReadDeadline(time.Now().Add(15 * time.Second))
 	_, msg, err := conn.ReadMessage()
 	if err != nil {
-		log.Printf("[artistly] WebSocket initial read failed: %v", err)
-		return ArtistlyMedia{}, fmt.Errorf("artistly: WebSocket read failed: %w", err)
+		return ArtistlyMedia{}, true, fmt.Errorf("handshake read failed: %w", err)
 	}
-	log.Printf("[artistly] received initial message: %s", truncateString(string(msg), 200))
-	var connEvent map[string]json.RawMessage
-	if err := json.Unmarshal(msg, &connEvent); err != nil {
-		log.Printf("[artistly] WebSocket parse failed: %v", err)
-		return ArtistlyMedia{}, fmt.Errorf("artistly: WebSocket parse failed: %w", err)
-	}
+	log.Printf("[artistly] initial message: %s", truncateString(string(msg), 120))
 
-	// Subscribe to the design channel
 	subscribeMsg, _ := json.Marshal(map[string]any{
 		"event": "pusher:subscribe",
 		"data":  map[string]string{"channel": channel},
 	})
-	log.Printf("[artistly] subscribing to channel: %s", channel)
 	if err := conn.WriteMessage(websocket.TextMessage, subscribeMsg); err != nil {
-		log.Printf("[artistly] WebSocket subscribe write failed: %v", err)
-		return ArtistlyMedia{}, fmt.Errorf("artistly: WebSocket subscribe failed: %w", err)
+		return ArtistlyMedia{}, true, fmt.Errorf("subscribe write failed: %w", err)
 	}
+	log.Printf("[artistly] subscribed to channel: %s", channel)
 
-	// Listen for DesignProcessed event with timeout
-	log.Printf("[artistly] listening for DesignProcessed events (timeout=%v)", ArtistlyPollTimeout)
-	deadline := time.After(ArtistlyPollTimeout)
 	msgCount := 0
 	for {
-		select {
-		case <-ctx.Done():
-			log.Printf("[artistly] context cancelled after %d messages", msgCount)
-			return ArtistlyMedia{}, ctx.Err()
-		case <-deadline:
-			log.Printf("[artistly] timed out after %d messages", msgCount)
-			return ArtistlyMedia{}, errors.New("artistly: timed out waiting for generated image")
-		default:
+		// Bound each wait by the remaining overall deadline and 45s max.
+		nextDeadline := time.Now().Add(45 * time.Second)
+		if remaining := time.Until(overallDeadline); remaining < nextDeadline.Sub(time.Now()) {
+			nextDeadline = time.Now().Add(remaining)
 		}
+		_ = conn.SetReadDeadline(nextDeadline)
 
-		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
-			log.Printf("[artistly] WebSocket read error (continuing): %v", err)
-			// Timeout or transient error — keep listening
-			continue
+			// gorilla connections are unusable after a read error — never
+			// re-read; tell the caller to open a fresh connection instead.
+			return ArtistlyMedia{}, true, fmt.Errorf("read failed after %d messages: %w", msgCount, err)
 		}
 		msgCount++
 
@@ -419,10 +442,24 @@ func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (Arti
 			continue
 		}
 
-		eventName, _ := event["event"]
 		var name string
-		json.Unmarshal(eventName, &name)
+		if rawName, ok := event["event"]; ok {
+			_ = json.Unmarshal(rawName, &name)
+		}
 		log.Printf("[artistly] message #%d event=%s", msgCount, name)
+
+		// Keep the Reverb connection alive by answering pings.
+		if name == "pusher:ping" {
+			pong, _ := json.Marshal(map[string]any{"event": "pusher:pong", "data": map[string]any{}})
+			if werr := conn.WriteMessage(websocket.TextMessage, pong); werr != nil {
+				return ArtistlyMedia{}, true, fmt.Errorf("pong write failed: %w", werr)
+			}
+			continue
+		}
+		if name == "pusher:error" {
+			log.Printf("[artistly] pusher error: %s", truncateString(string(msg), 300))
+			return ArtistlyMedia{}, false, fmt.Errorf("pusher error: %s", truncateString(string(msg), 200))
+		}
 
 		if name == "DesignProcessed" {
 			log.Printf("[artistly] DesignProcessed received! raw=%s", truncateString(string(msg), 500))
@@ -431,7 +468,6 @@ func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (Arti
 				log.Printf("[artistly] DesignProcessed has no data field")
 				continue
 			}
-			// Data may be a JSON-encoded string or an object
 			var dataBytes []byte
 			var dataStr string
 			if err := json.Unmarshal(rawData, &dataStr); err == nil {
@@ -439,17 +475,15 @@ func (a *ArtistlyClient) pollForDesign(ctx context.Context, prompt string) (Arti
 			} else {
 				dataBytes = rawData
 			}
-
 			var design map[string]any
 			if err := json.Unmarshal(dataBytes, &design); err != nil {
 				log.Printf("[artistly] DesignProcessed data unmarshal failed: %v", err)
 				continue
 			}
-
 			imageURL := findDesignImageURL(design)
 			if imageURL != "" {
 				log.Printf("[artistly] found image URL from DesignProcessed: %s", truncateString(imageURL, 100))
-				return ArtistlyMedia{URL: imageURL, Status: "completed"}, nil
+				return ArtistlyMedia{URL: imageURL, Status: "completed"}, true, nil
 			}
 			log.Printf("[artistly] DesignProcessed but no image URL found in design data")
 		}
