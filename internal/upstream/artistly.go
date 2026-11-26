@@ -435,6 +435,12 @@ func (a *ArtistlyClient) fetchLatestDesignImage(ctx context.Context, since time.
 		if err := json.Unmarshal([]byte(d.Images), &urls); err != nil || len(urls) == 0 || urls[0] == "" {
 			continue
 		}
+		// While the job is processing, Artistly returns a placeholder image
+		// (placehold.co/...?text=Processing...). Only accept the real CDN URL.
+		if !strings.Contains(urls[0], "cdn.artistly.ai") {
+			log.Printf("[artistly] design %s still processing (placeholder image), waiting", truncateString(d.UUID, 8))
+			continue
+		}
 		return urls[0], true, nil
 	}
 	return "", false, nil
