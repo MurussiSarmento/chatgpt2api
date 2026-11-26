@@ -178,19 +178,34 @@ func aspectFromSize(size string) string {
 	}
 }
 
-// artistlyAspectFromSize maps an OpenAI-style WxH size to an Artistly aspect ratio.
+// artistlyAspectFromSize maps an OpenAI-style WxH size to an Artistly aspect
+// ratio. Studio ratios convert to sizes via index.js ratios[]:
+// 1:1→1024x1024, 2:3→1024x1536, 3:2→1536x1024, 3:4→1024x1365, 4:3→1365x1024,
+// 9:16→1088x1920, 16:9→1920x1088. Also keep OpenAI-style sizes for API users.
 func artistlyAspectFromSize(size string) string {
 	switch size {
-	case "1024x1792", "1080x1920", "720x1280":
+	case "768x1344", "1024x1792", "1088x1920", "720x1280":
 		return "9:16"
-	case "1024x1024":
-		return "1:1"
-	case "1792x1024", "1920x1080", "1280x720":
+	case "1344x768", "1792x1024", "1920x1088", "1280x720":
 		return "16:9"
-	case "1536x1024":
+	case "640x1536":
+		return "9:21"
+	case "1024x1024", "auto":
+		return "1:1"
+	case "1216x832", "1536x1024":
 		return "3:2"
-	case "1024x1536":
+	case "832x1216", "1024x1536":
 		return "2:3"
+	case "896x1152", "1024x1365":
+		return "3:4"
+	case "1152x896", "1365x1024":
+		return "4:3"
+	case "896x1088":
+		return "4:5"
+	case "1088x896":
+		return "5:4"
+	case "1536x640":
+		return "21:9"
 	default:
 		return "1:1"
 	}
